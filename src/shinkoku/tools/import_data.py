@@ -33,33 +33,87 @@ def _detect_encoding(file_path: str) -> str:
 
 def _detect_date_column(headers: list[str]) -> int | None:
     """Find the column index that looks like a date column."""
-    date_patterns = ["日付", "利用日", "date", "取引日", "発生日", "年月日"]
-    for i, h in enumerate(headers):
-        h_lower = h.lower().strip()
-        for pattern in date_patterns:
-            if pattern in h_lower:
-                return i
-    return 0 if headers else None
-
-
-def _detect_description_column(headers: list[str]) -> int | None:
-    """Find the column index for the description."""
-    desc_patterns = [
-        "摘要",
-        "利用店名",
-        "店名",
-        "description",
-        "内容",
-        "取引内容",
-        "備考",
-        "名称",
+    # Include common JP headings seen in card/bank CSVs
+    date_patterns = [
+        "日付",
+        "利用日",
+        "ご利用日",
+        "ご利用年月日",
+        "date",
+        "取引日",
+        "発生日",
+        "年月日",
     ]
     for i, h in enumerate(headers):
         h_lower = h.lower().strip()
-        for pattern in desc_patterns:
-            if pattern in h_lower:
+        for pattern in date_patterns:
+            if pattern.lower() in h_lower:
                 return i
-    return 1 if len(headers) > 1 else None
+    return None
+
+
+def _detect_description_column(headers: list[str]) -> int | None:
+    """Find the primary description-like column index.
+
+    Prefer more specific columns (e.g., 摘要内容/お振込内容/取引内容) over a generic 摘要.
+    """
+    # Priority-ordered list (more specific first)
+    desc_patterns = [
+        "摘要内容",
+        "お振込内容",
+        "取引内容",
+        "ご利用箇所",
+        "支払先名称",
+        "お支払先",
+        "支払先",
+        "利用店名",
+        "店名",
+        "振込依頼人",
+        "名称",
+        "備考",
+        "description",
+        "内容",
+        "摘要",
+    ]
+    # Search by priority
+    lowered = [h.lower().strip() for h in headers]
+    for pattern in desc_patterns:
+        p = pattern.lower()
+        for idx, h in enumerate(lowered):
+            if p in h:
+                return idx
+    return None
+
+
+def _find_additional_desc_columns(headers: list[str], primary_idx: int | None) -> list[int]:
+    """Find additional description-related columns to concatenate for better context.
+
+    e.g., if both 摘要 and 摘要内容 exist, include both.
+    """
+    extra_patterns = [
+        # include both summary and detail style columns; order matters
+        "摘要",  # generic summary (prefer to show first later)
+        "摘要内容",
+        "お振込内容",
+        "取引内容",
+        "利用店名",
+        "支払先名称",
+        "お支払先",
+        "支払先",
+        "振込依頼人",
+        "名称",
+        "備考",
+    ]
+    lowered = [h.lower().strip() for h in headers]
+    idxs: list[int] = []
+    for pat in extra_patterns:
+        p = pat.lower()
+        for i, h in enumerate(lowered):
+            if i == primary_idx:
+                continue
+            if p in h and i not in idxs:
+                idxs.append(i)
+    return idxs
 
 
 def _detect_amount_column(headers: list[str]) -> int | None:
@@ -67,17 +121,46 @@ def _detect_amount_column(headers: list[str]) -> int | None:
     amount_patterns = [
         "金額",
         "利用金額",
+        "ご利用額",
+        "ご請求額",
         "amount",
         "支払金額",
         "取引金額",
+        "出金金額",
+        "入金金額",
+        "出金",
+        "入金",
         "合計",
     ]
     for i, h in enumerate(headers):
         h_lower = h.lower().strip()
         for pattern in amount_patterns:
-            if pattern in h_lower:
+            if pattern.lower() in h_lower:
                 return i
-    return 2 if len(headers) > 2 else None
+    return None
+
+
+def _find_header_row(rows: list[list[str]]) -> tuple[list[str], int]:
+    """Try to detect the header row index within the first few rows.
+
+    Some JP card CSVs prepend metadata lines before the actual header. This
+    scans up to 20 rows to find a plausible header by matching known keywords.
+    Returns (headers, data_start_index).
+    """
+    max_scan = min(20, len(rows))
+    for idx in range(max_scan):
+        headers = [h.strip() for h in rows[idx]]
+        if not headers or len(headers) < 2:
+            continue
+        d = _detect_date_column(headers)
+        a = _detect_amount_column(headers)
+        s = _detect_description_column(headers)
+        # Require at least two signals (e.g., date+amount or amount+desc)
+        signals = sum(x is not None for x in (d, a, s))
+        if signals >= 2:
+            return headers, idx + 1
+    # Fallback to first row
+    return ([h.strip() for h in rows[0]] if rows else []), 1
 
 
 def _parse_amount(value: str) -> int | None:
@@ -135,17 +218,26 @@ def import_csv(*, file_path: str) -> dict:
             "errors": [],
         }
 
-    # First row is headers
-    headers = [h.strip() for h in rows[0]]
+    # Detect header row (handles files with leading metadata lines)
+    headers, data_start = _find_header_row(rows)
     date_col = _detect_date_column(headers)
     desc_col = _detect_description_column(headers)
+    # Find extra description-like columns to concatenate
+    extra_desc_cols = _find_additional_desc_columns(headers, desc_col)
     amount_col = _detect_amount_column(headers)
+    # Fallback defaults if still not detected
+    if date_col is None and headers:
+        date_col = 0
+    if desc_col is None and len(headers) > 1:
+        desc_col = 1
+    if amount_col is None and len(headers) > 2:
+        amount_col = 2
 
     candidates = []
     skipped_rows = []
     errors: list[str] = []
 
-    for i, row in enumerate(rows[1:], start=2):
+    for i, row in enumerate(rows[data_start:], start=data_start + 1):
         # Skip empty rows
         if not row or all(not cell.strip() for cell in row):
             continue
@@ -164,7 +256,37 @@ def import_csv(*, file_path: str) -> dict:
                 continue
 
             date_val = _normalize_date(row[date_col]) if date_col is not None else None
-            desc_val = row[desc_col].strip() if desc_col is not None else ""
+            # Build composite description: prefer showing generic 摘要 first when available,
+            # followed by more specific columns (摘要内容/お振込内容 等)
+            parts: list[str] = []
+            # exact-match index for generic 摘要 (if exists)
+            try:
+                summary_idx = next(
+                    i for i, h in enumerate(headers) if h.strip() == "摘要"
+                )
+            except StopIteration:
+                summary_idx = None  # type: ignore[assignment]
+
+            # 1) generic 摘要 first
+            if summary_idx is not None and summary_idx < len(row):
+                v = row[summary_idx].strip()
+                if v:
+                    parts.append(v)
+
+            # 2) primary description (if different from 摘要)
+            if desc_col is not None and desc_col < len(row) and desc_col != summary_idx:
+                v = row[desc_col].strip()
+                if v and v not in parts:
+                    parts.append(v)
+
+            # 3) additional description-like columns in detected order
+            for j in extra_desc_cols:
+                if j < len(row):
+                    v = row[j].strip()
+                    if v and v not in parts:
+                        parts.append(v)
+
+            desc_val = " ".join(parts)
             amount_val = _parse_amount(row[amount_col]) if amount_col is not None else None
 
             if date_val is None or amount_val is None:
