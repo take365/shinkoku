@@ -135,16 +135,53 @@ def find_duplicate_pairs(
                 exact_count += 1
 
     # Phase 2: Same date + same total debit (score 70-90)
-    journals = conn.execute(
-        "SELECT j.id, j.date, j.description, "
-        "GROUP_CONCAT(jl.account_code ORDER BY jl.account_code), "
-        "SUM(CASE WHEN jl.side='debit' THEN jl.amount ELSE 0 END) as debit_total "
+    journal_lines = conn.execute(
+        "SELECT j.id, j.date, j.description, jl.account_code, jl.side, jl.amount "
         "FROM journals j "
         "INNER JOIN journal_lines jl ON jl.journal_id = j.id "
         "WHERE j.fiscal_year = ? "
-        "GROUP BY j.id",
+        "ORDER BY j.id, jl.account_code, jl.id",
         (fiscal_year,),
     ).fetchall()
+
+    journals: list[tuple[int, str, str | None, str, int]] = []
+    by_journal: dict[int, dict[str, object]] = {}
+    for row in journal_lines:
+        journal_id = int(row[0])
+        item = by_journal.get(journal_id)
+        if item is None:
+            item = {
+                "id": journal_id,
+                "date": row[1],
+                "description": row[2],
+                "account_codes": [],
+                "debit_total": 0,
+            }
+            by_journal[journal_id] = item
+
+        account_codes = item["account_codes"]
+        assert isinstance(account_codes, list)
+        account_codes.append(str(row[3]))
+
+        if row[4] == "debit":
+            debit_total = item["debit_total"]
+            assert isinstance(debit_total, int)
+            item["debit_total"] = debit_total + int(row[5])
+
+    for item in by_journal.values():
+        account_codes = item["account_codes"]
+        assert isinstance(account_codes, list)
+        debit_total = item["debit_total"]
+        assert isinstance(debit_total, int)
+        journals.append(
+            (
+                int(item["id"]),
+                str(item["date"]),
+                item["description"],
+                ",".join(account_codes),
+                debit_total,
+            )
+        )
 
     # Index by (date, debit_total) for O(n) grouping
     groups: dict[tuple[str, int], list[tuple[int, str | None, str | None]]] = defaultdict(list)

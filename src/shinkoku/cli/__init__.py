@@ -22,6 +22,7 @@ def main() -> None:
         pdf,
         profile,
         tax_calc,
+        web as web_ui,
     )
 
     ledger.register(subparsers)
@@ -30,6 +31,7 @@ def main() -> None:
     furusato.register(subparsers)
     profile.register(subparsers)
     pdf.register(subparsers)
+    web_ui.register(subparsers)
 
     args = parser.parse_args()
     if not hasattr(args, "func"):

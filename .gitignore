@@ -2,6 +2,8 @@ output/
 __pycache__/
 *.pyc
 .venv/
+.venv-win/
+.venv-wsl-backup/
 *.egg-info/
 dist/
 .pytest_cache/
@@ -26,3 +28,4 @@ shinkoku.config.yaml
 shinkoku.db
 shinkoku.db-wal
 shinkoku.db-shm
+work/
