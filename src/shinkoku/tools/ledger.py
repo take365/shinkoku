@@ -302,6 +302,9 @@ def ledger_search(*, db_path: str, params: JournalSearchParams) -> dict:
         if params.source:
             conditions.append("j.source = ?")
             bind_params.append(params.source)
+        if params.source_file is not None:
+            conditions.append("COALESCE(j.source_file, '') = ?")
+            bind_params.append(params.source_file)
 
         where_clause = " AND ".join(conditions)
 

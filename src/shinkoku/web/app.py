@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+import shlex
+import calendar
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
@@ -30,6 +32,7 @@ import base64
 import json as _json
 from typing import Optional
 import mimetypes
+from urllib.parse import urlencode
 
 try:
     import requests
@@ -56,6 +59,8 @@ def _templ_env() -> Environment:
             except Exception:
                 return v
     env.filters["comma"] = _comma
+    env.filters["urlencode"] = lambda v: urlencode({"v": v})[2:] if v is not None else ""
+    env.globals["set_query_sort"] = _set_query_sort
     return env
 
 
@@ -101,6 +106,166 @@ def _preview_source_file(path: Path) -> dict[str, Any]:
             return {"kind": "csv", "rows": rows}
         return {"kind": "text", "text": text[:4000]}
     return {"kind": "binary"}
+
+
+def _build_journals_url(**params: Any) -> str:
+    query = {key: value for key, value in params.items() if value not in (None, "", False)}
+    return "/journals" + (f"?{urlencode(query)}" if query else "")
+
+
+def _blank_to_none(value: str | None) -> str | None:
+    if value is None:
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
+def _quote_query_token(token: str) -> str:
+    if not token:
+        return token
+    if any(ch.isspace() for ch in token) or '"' in token:
+        escaped = token.replace("\\", "\\\\").replace('"', '\\"')
+        return f'"{escaped}"'
+    return token
+
+
+def _set_query_sort(raw_query: str | None, field: str, direction: str) -> str:
+    try:
+        tokens = shlex.split(raw_query or "")
+    except ValueError:
+        tokens = (raw_query or "").split()
+
+    kept: list[str] = []
+    for token in tokens:
+        lower = token.lower()
+        if lower in {"asc", "desc"}:
+            continue
+        if lower.startswith("sort:"):
+            continue
+        kept.append(token)
+
+    kept.append(f"sort:{field}")
+    kept.append(direction)
+    return " ".join(_quote_query_token(token) for token in kept if token)
+
+
+def _parse_journal_query(raw_query: str | None) -> dict[str, Any]:
+    parsed: dict[str, Any] = {
+        "free_terms": [],
+        "exclude_terms": [],
+        "description_terms": [],
+        "counterparty_terms": [],
+        "q": None,
+        "account_code": None,
+        "counterparty": None,
+        "source": None,
+        "source_file": None,
+        "date_from": None,
+        "date_to": None,
+        "sort": None,
+        "dir": None,
+    }
+    if not raw_query:
+        return parsed
+
+    try:
+        tokens = shlex.split(raw_query)
+    except ValueError:
+        tokens = raw_query.split()
+
+    for token in tokens:
+        lower = token.lower()
+        if lower in {"asc", "desc"}:
+            parsed["dir"] = lower
+            continue
+        if ":" in token:
+            key, value = token.split(":", 1)
+            key = key.lower()
+            if not value:
+                continue
+            if key in {"q", "query"}:
+                parsed["free_terms"].append(value)
+            elif key == "desc":
+                parsed["description_terms"].append(value)
+            elif key == "cp":
+                parsed["counterparty_terms"].append(value)
+            elif key == "acc":
+                parsed["account_code"] = value
+            elif key == "src":
+                parsed["source"] = value
+            elif key == "file":
+                parsed["source_file"] = value
+            elif key == "from":
+                parsed["date_from"] = value
+            elif key == "to":
+                parsed["date_to"] = value
+            elif key == "sort":
+                parsed["sort"] = value
+            continue
+        if token.startswith("-") and len(token) > 1:
+            parsed["exclude_terms"].append(token[1:])
+            continue
+        parsed["free_terms"].append(token)
+
+    if parsed["free_terms"]:
+        parsed["q"] = " ".join(parsed["free_terms"])
+    return parsed
+
+
+def _journal_search_text(journal: dict[str, Any], account_names: dict[str, str]) -> str:
+    parts: list[str] = [
+        str(journal.get("id") or ""),
+        str(journal.get("date") or ""),
+        str(journal.get("description") or ""),
+        str(journal.get("counterparty") or ""),
+        str(journal.get("source") or ""),
+        str(journal.get("source_file") or ""),
+    ]
+    for line in journal.get("lines", []):
+        code = str(line.get("account_code") or "")
+        parts.append(code)
+        parts.append(account_names.get(code, ""))
+    return " ".join(parts).lower()
+
+
+def _filter_journals_by_query(
+    journals: list[dict[str, Any]],
+    *,
+    free_terms: list[str],
+    exclude_terms: list[str],
+    description_terms: list[str],
+    counterparty_terms: list[str],
+    account_names: dict[str, str],
+) -> list[dict[str, Any]]:
+    if not free_terms and not exclude_terms and not description_terms and not counterparty_terms:
+        return journals
+
+    free_terms_l = [term.lower() for term in free_terms if term]
+    exclude_terms_l = [term.lower() for term in exclude_terms if term]
+    description_terms_l = [term.lower() for term in description_terms if term]
+    counterparty_terms_l = [term.lower() for term in counterparty_terms if term]
+    filtered: list[dict[str, Any]] = []
+    for journal in journals:
+        haystack = _journal_search_text(journal, account_names)
+        description = str(journal.get("description") or "").lower()
+        counterparty = str(journal.get("counterparty") or "").lower()
+        if free_terms_l and not all(term in haystack for term in free_terms_l):
+            continue
+        if description_terms_l and not all(term in description for term in description_terms_l):
+            continue
+        if counterparty_terms_l and not all(term in counterparty for term in counterparty_terms_l):
+            continue
+        if exclude_terms_l and any(term in haystack for term in exclude_terms_l):
+            continue
+        filtered.append(journal)
+    return filtered
+
+
+def _sum_journal_debits(journals: list[dict[str, Any]]) -> int:
+    return sum(
+        sum(int(line.get("amount") or 0) for line in journal.get("lines", []) if line.get("side") == "debit")
+        for journal in journals
+    )
 
 
 def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
@@ -212,10 +377,14 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
     @app.get("/journals", response_class=HTMLResponse)
     def journals(
         request: Request,
+        query: str | None = None,
         q: str | None = None,
         source: str | None = None,
         date_from: str | None = None,
         date_to: str | None = None,
+        account_code: str | None = None,
+        counterparty: str | None = None,
+        source_file: str | None = None,
         limit: int = 100,
         offset: int = 0,
         show_source: int = 0,
@@ -223,28 +392,39 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
         dir: str | None = None,
     ) -> str:
         try:
+            counterparty = _blank_to_none(counterparty)
+            source_file = _blank_to_none(source_file)
+            source = _blank_to_none(source)
+            date_from = _blank_to_none(date_from)
+            date_to = _blank_to_none(date_to)
+            account_code = _blank_to_none(account_code)
+            parsed_query = _parse_journal_query(query)
+            effective_q = parsed_query["q"] if query else q
+            effective_source = parsed_query["source"] or source if query else source
+            effective_date_from = parsed_query["date_from"] or date_from if query else date_from
+            effective_date_to = parsed_query["date_to"] or date_to if query else date_to
+            effective_account_code = parsed_query["account_code"] or account_code if query else account_code
+            effective_counterparty = counterparty
+            effective_source_file = parsed_query["source_file"] or source_file if query else source_file
+            effective_sort = parsed_query["sort"] or sort if query else sort
+            effective_dir = parsed_query["dir"] or dir if query else dir
+            fetch_limit = 5000 if query else limit
+            fetch_offset = 0 if query else offset
+
             params = JournalSearchParams(
                 fiscal_year=app.state.fiscal_year,
-                date_from=date_from,
-                date_to=date_to,
-                description_contains=q,
-                source=source,
-                limit=limit,
-                offset=offset,
+                date_from=effective_date_from,
+                date_to=effective_date_to,
+                account_code=effective_account_code,
+                description_contains=effective_q if not query else None,
+                counterparty_contains=effective_counterparty,
+                source=effective_source,
+                source_file=effective_source_file,
+                limit=fetch_limit,
+                offset=fetch_offset,
             )
             result = ledger_search(db_path=app.state.db_path, params=params)
-            # Optional in-memory sorting for current page (id/date/source_file)
-            sort_key = None
-            if sort in {"id", "date", "source_file"}:
-                if sort == "id":
-                    sort_key = lambda j: j.get("id", 0)
-                elif sort == "date":
-                    sort_key = lambda j: j.get("date", "")
-                elif sort == "source_file":
-                    sort_key = lambda j: (j.get("source_file") or "")
-            if sort_key and isinstance(result, dict) and isinstance(result.get("journals"), list):
-                result["journals"] = sorted(result["journals"], key=sort_key, reverse=(dir == "desc"))
-            # Build account code -> name map for display
+
             names: dict[str, str] = {}
             conn = get_connection(app.state.db_path)
             try:
@@ -252,26 +432,95 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
                     names[str(code)] = name
             finally:
                 conn.close()
+
+            if query and isinstance(result, dict) and isinstance(result.get("journals"), list):
+                journals_all = _filter_journals_by_query(
+                    result["journals"],
+                    free_terms=parsed_query["free_terms"],
+                    exclude_terms=parsed_query["exclude_terms"],
+                    description_terms=parsed_query["description_terms"],
+                    counterparty_terms=parsed_query["counterparty_terms"],
+                    account_names=names,
+                )
+                result["total_count"] = len(journals_all)
+                result["journals"] = journals_all[offset : offset + limit]
+            else:
+                journals_all = None
+
+            sort_key = None
+            if effective_sort in {"id", "date", "source_file"}:
+                if effective_sort == "id":
+                    sort_key = lambda j: j.get("id", 0)
+                elif effective_sort == "date":
+                    sort_key = lambda j: j.get("date", "")
+                elif effective_sort == "source_file":
+                    sort_key = lambda j: (j.get("source_file") or "")
+            if sort_key and isinstance(result, dict) and isinstance(result.get("journals"), list):
+                result["journals"] = sorted(
+                    result["journals"],
+                    key=sort_key,
+                    reverse=(effective_dir == "desc"),
+                )
+
+            has_filters = bool(
+                query
+                or effective_q
+                or effective_source
+                or effective_date_from
+                or effective_date_to
+                or effective_account_code
+                or effective_counterparty
+                or effective_source_file
+            )
+            total_amount = 0
+            if has_filters:
+                if journals_all is not None:
+                    total_amount = _sum_journal_debits(journals_all)
+                elif isinstance(result, dict) and int(result.get("total_count", 0) or 0) > 0:
+                    total_params = params.model_copy(update={"limit": int(result["total_count"]), "offset": 0})
+                    total_result = ledger_search(db_path=app.state.db_path, params=total_params)
+                    total_amount = _sum_journal_debits(total_result.get("journals", []))
+
             context = dict(
                 request=request,
                 fiscal_year=app.state.fiscal_year,
-                q=q or "",
-                source=source or "",
-                date_from=date_from or "",
-                date_to=date_to or "",
+                view_title="仕訳一覧",
+                query=query or "",
+                q="" if query else (effective_q or ""),
+                source=effective_source or "",
+                date_from=effective_date_from or "",
+                date_to=effective_date_to or "",
+                account_code=effective_account_code or "",
+                counterparty=effective_counterparty or "",
+                source_file=effective_source_file or "",
                 limit=limit,
                 offset=offset,
                 res=result,
+                total_amount=total_amount,
                 show_source=bool(show_source),
                 account_names=names,
-                sort=sort or "",
-                dir=dir or "",
+                sort=effective_sort or "",
+                dir=effective_dir or "",
+                active_filters=[
+                    label
+                    for label in [
+                        f"検索式: {query}" if query else "",
+                        f"摘要条件: {' / '.join(parsed_query['description_terms'])}" if parsed_query["description_terms"] else "",
+                        f"取引先条件: {' / '.join(parsed_query['counterparty_terms'])}" if parsed_query["counterparty_terms"] else "",
+                        f"勘定科目: {effective_account_code} {names.get(effective_account_code or '', '')}".strip() if effective_account_code else "",
+                        f"取引先: {effective_counterparty}" if effective_counterparty else "",
+                        f"入力元: {effective_source_file}" if effective_source_file else "",
+                        f"検索: {effective_q}" if effective_q and not query else "",
+                        f"source: {effective_source}" if effective_source else "",
+                        f"期間: {effective_date_from or '開始日なし'} - {effective_date_to or '終了日なし'}" if (effective_date_from or effective_date_to) else "",
+                    ]
+                    if label
+                ],
             )
-            # HTMX partial render
+            context["show_total_amount"] = has_filters
             if request.headers.get("HX-Request"):
                 template = env.get_template("partials/journals_table.html")
                 return template.render(**context)
-            # Full page
             template = env.get_template("journals.html")
             return template.render(**context)
         except Exception as e:
@@ -475,58 +724,16 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
         limit: int = 100,
         offset: int = 0,
     ) -> str:
-        where = ["j.fiscal_year = ?", "COALESCE(j.description,'') = ?"]
-        params: list = [app.state.fiscal_year, desc]
-        _build_filters(where, params, source=source, date_from=date_from, date_to=date_to)
-        where_clause = " AND ".join(where)
-
-        sql = (
-            "SELECT j.id, j.date, COALESCE(j.description,''), j.counterparty, j.source, j.source_file, "
-            "SUM(CASE WHEN jl.side='debit' THEN jl.amount ELSE 0 END) AS debit_sum "
-            "FROM journals j INNER JOIN journal_lines jl ON jl.journal_id = j.id "
-            f"WHERE {where_clause} GROUP BY j.id ORDER BY j.date, j.id LIMIT ? OFFSET ?"
-        )
-        conn = get_connection(app.state.db_path)
-        try:
-            rows = conn.execute(sql, params + [limit, offset]).fetchall()
-            count_sql = f"SELECT COUNT(*) FROM journals j WHERE {where_clause}"
-            total = conn.execute(count_sql, params).fetchone()[0]
-            sum_sql = (
-                "SELECT SUM(CASE WHEN jl.side='debit' THEN jl.amount ELSE 0 END) "
-                "FROM journals j INNER JOIN journal_lines jl ON jl.journal_id = j.id "
-                f"WHERE {where_clause}"
-            )
-            total_amount = conn.execute(sum_sql, params).fetchone()[0] or 0
-            items = [
-                {
-                    "id": r[0],
-                    "date": r[1],
-                    "description": r[2],
-                    "counterparty": r[3],
-                    "source": r[4],
-                    "source_file": r[5],
-                    "amount": r[6] or 0,
-                }
-                for r in rows
-            ]
-            items_sum = sum(it["amount"] for it in items)
-        finally:
-            conn.close()
-
-        template = env.get_template("summary_description_detail.html")
-        return template.render(
-            request=request,
-            fiscal_year=app.state.fiscal_year,
-            desc=desc,
-            items=items,
-            total=total,
-            total_amount=total_amount,
-            total_amount_str=(f"{int(total_amount):,}" if total_amount not in (None, 0) else f"{int(items_sum):,}"),
-            source=source or "",
-            date_from=date_from or "",
-            date_to=date_to or "",
-            limit=limit,
-            offset=offset,
+        return RedirectResponse(
+            url=_build_journals_url(
+                query=f'desc:"{desc}"',
+                source=source,
+                date_from=date_from,
+                date_to=date_to,
+                limit=limit,
+                offset=offset,
+            ),
+            status_code=302,
         )
 
     # ========== Monthly Summary (PL) ==========
@@ -560,7 +767,19 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
                 revenue = int(r[1] or 0)
                 expense = int(r[2] or 0)
                 net = revenue - expense
-                items.append({"ym": ym, "revenue": revenue, "expense": expense, "net": net})
+                year = int(ym[:4])
+                month = int(ym[5:7])
+                month_end = calendar.monthrange(year, month)[1]
+                items.append(
+                    {
+                        "ym": ym,
+                        "month_from": f"{ym}-01",
+                        "month_to": f"{ym}-{month_end:02d}",
+                        "revenue": revenue,
+                        "expense": expense,
+                        "net": net,
+                    }
+                )
             # totals
             totals = {
                 "revenue": sum(i["revenue"] for i in items),
@@ -881,53 +1100,16 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
         limit: int = 100,
         offset: int = 0,
     ) -> str:
-        where = ["j.fiscal_year = ?", "COALESCE(j.counterparty,'') = ?"]
-        params: list = [app.state.fiscal_year, name]
-        _build_filters(where, params, source=source, date_from=date_from, date_to=date_to)
-        where_clause = " AND ".join(where)
-
-        sql = (
-            "SELECT j.id, j.date, COALESCE(j.description,''), j.counterparty, j.source, j.source_file, "
-            "SUM(CASE WHEN jl.side='debit' THEN jl.amount ELSE 0 END) AS debit_sum "
-            "FROM journals j INNER JOIN journal_lines jl ON jl.journal_id = j.id "
-            f"WHERE {where_clause} GROUP BY j.id ORDER BY j.date, j.id LIMIT ? OFFSET ?"
-        )
-        conn = get_connection(app.state.db_path)
-        try:
-            rows = conn.execute(sql, params + [limit, offset]).fetchall()
-            count_sql = f"SELECT COUNT(*) FROM journals j WHERE {where_clause}"
-            total = conn.execute(count_sql, params).fetchone()[0]
-            sum_sql = (
-                "SELECT SUM(CASE WHEN jl.side='debit' THEN jl.amount ELSE 0 END) "
-                "FROM journals j INNER JOIN journal_lines jl ON jl.journal_id = j.id "
-                f"WHERE {where_clause}"
-            )
-            total_amount = conn.execute(sum_sql, params).fetchone()[0] or 0
-            items = [
-                {
-                    "id": r[0],
-                    "date": r[1],
-                    "description": r[2],
-                    "counterparty": r[3],
-                    "source": r[4],
-                    "source_file": r[5],
-                    "amount": r[6] or 0,
-                }
-                for r in rows
-            ]
-        finally:
-            conn.close()
-
-        template = env.get_template("summary_counterparty_detail.html")
-        return template.render(
-            request=request,
-            fiscal_year=app.state.fiscal_year,
-            name=name,
-            items=items,
-            total=total,
-            total_amount=total_amount,
-            limit=limit,
-            offset=offset,
+        return RedirectResponse(
+            url=_build_journals_url(
+                query=f'cp:"{name}"',
+                source=source,
+                date_from=date_from,
+                date_to=date_to,
+                limit=limit,
+                offset=offset,
+            ),
+            status_code=302,
         )
 
     # ========== Fixed Assets ==========
@@ -979,23 +1161,62 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
     @app.get("/journals.csv")
     def journals_csv(
         request: Request,
+        query: str | None = None,
         q: str | None = None,
         source: str | None = None,
         date_from: str | None = None,
         date_to: str | None = None,
+        account_code: str | None = None,
+        counterparty: str | None = None,
+        source_file: str | None = None,
         limit: int = 1000,
         offset: int = 0,
     ) -> StreamingResponse:
+        counterparty = _blank_to_none(counterparty)
+        source_file = _blank_to_none(source_file)
+        source = _blank_to_none(source)
+        date_from = _blank_to_none(date_from)
+        date_to = _blank_to_none(date_to)
+        account_code = _blank_to_none(account_code)
+        parsed_query = _parse_journal_query(query)
+        effective_q = parsed_query["q"] if query else q
+        effective_source = parsed_query["source"] or source if query else source
+        effective_date_from = parsed_query["date_from"] or date_from if query else date_from
+        effective_date_to = parsed_query["date_to"] or date_to if query else date_to
+        effective_account_code = parsed_query["account_code"] or account_code if query else account_code
+        effective_counterparty = counterparty
+        effective_source_file = parsed_query["source_file"] or source_file if query else source_file
+
         params = JournalSearchParams(
             fiscal_year=request.app.state.fiscal_year,
-            date_from=date_from,
-            date_to=date_to,
-            description_contains=q,
-            source=source,
-            limit=limit,
-            offset=offset,
+            date_from=effective_date_from,
+            date_to=effective_date_to,
+            account_code=effective_account_code,
+            description_contains=effective_q if not query else None,
+            counterparty_contains=effective_counterparty,
+            source=effective_source,
+            source_file=effective_source_file,
+            limit=(5000 if query else limit),
+            offset=(0 if query else offset),
         )
         res = ledger_search(db_path=request.app.state.db_path, params=params)
+        if query and isinstance(res, dict) and isinstance(res.get("journals"), list):
+            names: dict[str, str] = {}
+            conn = get_connection(request.app.state.db_path)
+            try:
+                for code, name in conn.execute("SELECT code, name FROM accounts").fetchall():
+                    names[str(code)] = name
+            finally:
+                conn.close()
+            res["journals"] = _filter_journals_by_query(
+                res["journals"],
+                free_terms=parsed_query["free_terms"],
+                exclude_terms=parsed_query["exclude_terms"],
+                description_terms=parsed_query["description_terms"],
+                counterparty_terms=parsed_query["counterparty_terms"],
+                account_names=names,
+            )
+            res["total_count"] = len(res["journals"])
         csv_text = _journals_to_csv(res)
         return StreamingResponse(_io.StringIO(csv_text), media_type="text/csv")
 

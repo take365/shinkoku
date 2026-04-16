@@ -42,6 +42,7 @@ class JournalSearchParams(BaseModel):
     amount_min: int | None = None
     amount_max: int | None = None
     source: str | None = None
+    source_file: str | None = None
     limit: int = 100
     offset: int = 0
 
