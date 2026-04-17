@@ -13,7 +13,9 @@ htmlcov/
 .ruff_cache/
 playground/
 .shinkoku/
-templates/
+# `templates/` was previously used as a temporary PDF sample/work area,
+# but this repository's actual Web source lives under `src/shinkoku/web/templates/`.
+# Ignore concrete scratch/output locations instead of every `templates/` directory.
 specs/
 .playwright-cli/
 
