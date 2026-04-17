@@ -31,7 +31,7 @@ def _run(args: argparse.Namespace) -> None:
         print(
             (
                 "{\"status\": \"error\", \"message\": "
-                "\"FastAPI/uvicorn not available. Install with: pip install fastapi uvicorn jinja2\""
+                "\"FastAPI/uvicorn not available. Install with: pip install fastapi uvicorn jinja2 python-multipart\""
                 "}"
             )
         )
@@ -39,4 +39,3 @@ def _run(args: argparse.Namespace) -> None:
 
     app = create_app(db_path=args.db_path, fiscal_year=args.fiscal_year)
     uvicorn.run(app, host=args.host, port=args.port, reload=args.reload)
-

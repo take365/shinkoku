@@ -31,3 +31,7 @@ shinkoku.db
 shinkoku.db-wal
 shinkoku.db-shm
 work/
+
+# Local Codex/CUA skill installs
+.agents/skills/
+skills-lock.json
