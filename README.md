@@ -67,6 +67,39 @@ uv tool upgrade shinkoku
 
 > Cowork の場合は、チャットで Claude にインストールを依頼してください。
 
+### インストール方式の使い分け
+
+shinkoku には、以下の 2 つの使い方があります。
+
+- **利用者向け**: `uv tool install` でインストール済み CLI を使う
+- **開発者向け / Web UI 利用時**: このリポジトリを `clone` し、`uv sync` したローカルコードをそのまま使う
+
+`/journal` などの通常スキルを使うだけなら、これまでどおり `uv tool install` ベースで問題ありません。  
+一方で、`/web-ui` を使う場合や、CSV 取り込み時にパーサをその場で調整しながら試す場合は、ローカルの変更をすぐ反映できる `clone + uv sync` の方が安定して運用できます。
+
+### 方法 0: clone + uv sync（開発者向け / Web UI 利用時）
+
+`web` サブコマンドや `/web-ui` スキルを使う場合は、こちらの方法を推奨します。ローカルコードをそのまま CLI に反映できるため、開発中の変更と実行結果がずれにくくなります。
+
+> 補足: 2026年4月時点では、Web UI 関連の調整は `take365/shinkoku` 側で先行して進めています。`kazukinagata/shinkoku` 由来の install-only 運用は引き続き利用できますが、Web UI を使う場合は `take365/shinkoku` を clone して `uv sync` した環境を推奨します。
+
+```bash
+# リポジトリを clone
+git clone https://github.com/take365/shinkoku
+cd shinkoku
+
+# 依存関係を同期
+uv sync
+
+# 仮想環境を有効化
+source .venv/bin/activate
+
+# 例: Web UI を起動
+python -m shinkoku.cli web --db-path ./shinkoku.db --fiscal-year 2025 --port 8010
+```
+
+> WSL / Linux では上記の方法が扱いやすく、`/setup` と `/web-ui` もこの前提で利用できます。
+
 ### 方法 1: Claude Code プラグイン（フル機能）
 
 プラグイン機能を使い、OCR 画像読取を含む全機能を利用できます。
@@ -146,7 +179,9 @@ WSL の場合、GUI 表示が必要です（headed モードで Chrome を操作
 
 ### 作業ディレクトリの準備
 
-shinkoku はプラグイン（またはスキル）としてインストールして使います。**このリポジトリを clone する必要はありません。**
+通常利用では、shinkoku はプラグイン（またはスキル）としてインストールして使います。**`/journal` などの利用だけであれば、このリポジトリを clone する必要はありません。**
+
+ただし、`/web-ui` を使う場合や、CSV 取り込み・画面まわりをローカルで調整しながら使う場合は、上記の `clone + uv sync` 手順でローカルコードを使う方が安定します。
 
 お好きなディレクトリを作業フォルダとして使ってください。確定申告に関するデータはすべてこのフォルダ内に保存されます。
 
@@ -202,6 +237,7 @@ shinkoku は作業ディレクトリに以下のファイルを生成します�
 | `/consumption-tax` | 消費税額を計算（2割特例・簡易課税・本則課税） |
 | `/submit` | 最終確認チェックリストと提出方法（e-Tax / 郵送 / 持参）の案内 |
 | `/e-tax` | 確定申告書等作成コーナーへの入力代行（Claude in Chrome / Playwright / Antigravity） |
+| `/web-ui` | Web UI の起動・停止・画面案内・検索式付き URL 生成 |
 
 ### 補助スキル
 
