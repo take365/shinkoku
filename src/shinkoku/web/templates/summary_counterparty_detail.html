@@ -1,0 +1,21 @@
+{% extends 'layout.html' %}
+{% block content %}
+  <h3>取引先: {{ name or '(なし)' }}</h3>
+  <p class="muted">{{ total }} 件 / 合計（借方）: {{ '{:,}'.format(items | map(attribute='amount') | sum) }}</p>
+  <table>
+    <thead><tr><th>ID</th><th>日付</th><th>摘要</th><th>source</th><th>source_file</th><th>金額（借方合計）</th></tr></thead>
+    <tbody>
+      {% for it in items %}
+      <tr>
+        <td>{{ it.id }}</td>
+        <td>{{ it.date }}</td>
+        <td>{{ it.description or '' }}</td>
+        <td class="muted">{{ it.source or '' }}</td>
+        <td class="muted">{{ it.source_file or '' }}</td>
+        <td style="text-align:right">{{ '{:,}'.format(it.amount) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}
+

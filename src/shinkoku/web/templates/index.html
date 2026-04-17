@@ -1,0 +1,107 @@
+{% extends 'layout.html' %}
+{% block content %}
+  <div class="grid">
+    <div class="card">
+      <h3>損益計算書サマリ</h3>
+      {% if pl and pl.get('status','ok') != 'error' %}
+        <p>売上合計 {{ '{:,}'.format(pl.total_revenue | default(0)) }} / 費用合計 {{ '{:,}'.format(pl.total_expense | default(0)) }}</p>
+        <p><strong>当期損益: {{ '{:,}'.format(pl.net_income | default(0)) }}</strong></p>
+        <div class="grid" style="grid-template-columns: 1fr 1fr; gap:12px; margin-top:8px;">
+          <div>
+            <h4 style="margin:4px 0;">主要な売上科目</h4>
+            <table>
+              <thead><tr><th>科目</th><th style="text-align:right">金額</th></tr></thead>
+              <tbody>
+                {% for r in (pl.revenues | sort(attribute='amount', reverse=True))[:5] %}
+                <tr>
+                  <td><a href="/journals?query={{ ('acc:' ~ r.account_code)|urlencode }}">{{ r.account_code }} {{ r.account_name }}</a></td>
+                  <td style="text-align:right">{{ '{:,}'.format(r.amount) }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          <div>
+            <h4 style="margin:4px 0;">主要な費用科目</h4>
+            <table>
+              <thead><tr><th>科目</th><th style="text-align:right">金額</th></tr></thead>
+              <tbody>
+                {% for e in (pl.expenses | sort(attribute='amount', reverse=True))[:5] %}
+                <tr>
+                  <td><a href="/journals?query={{ ('acc:' ~ e.account_code)|urlencode }}">{{ e.account_code }} {{ e.account_name }}</a></td>
+                  <td style="text-align:right">{{ '{:,}'.format(e.amount) }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      {% else %}
+        <p class="muted">データなし</p>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <h3>勘定科目サマリ（主要科目）</h3>
+      {% if tb and tb.get('status','ok') != 'error' %}
+        <table>
+          <thead><tr><th>科目</th><th>借方</th><th>貸方</th><th>残高</th></tr></thead>
+          <tbody>
+            {% for a in tb.accounts[:10] %}
+            <tr>
+              <td><a href="/journals?query={{ ('acc:' ~ a.account_code)|urlencode }}">{{ a.account_code }} {{ a.account_name }}</a></td>
+              <td style="text-align:right">{{ '{:,}'.format(a.debit_total) }}</td>
+              <td style="text-align:right">{{ '{:,}'.format(a.credit_total) }}</td>
+              <td style="text-align:right">{{ '{:,}'.format(a.balance) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="muted">データなし</p>
+      {% endif %}
+      <p class="muted"><a href="/trial-balance">勘定科目サマリへ</a></p>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px;">
+    <h3>貸借対照表サマリ</h3>
+    {% if bs and bs.get('status','ok') != 'error' %}
+      <p>資産合計 {{ '{:,}'.format(bs.total_assets | default(0)) }} / 負債合計 {{ '{:,}'.format(bs.total_liabilities | default(0)) }} / 純資産合計 {{ '{:,}'.format(bs.total_equity | default(0)) }}</p>
+      <div class="grid" style="grid-template-columns: 1fr 1fr; gap:12px;">
+        <div>
+          <h4 style="margin:4px 0;">主要な資産</h4>
+          <table>
+            <thead><tr><th>科目</th><th style="text-align:right">金額</th></tr></thead>
+            <tbody>
+              {% for a in (bs.assets | sort(attribute='amount', reverse=True))[:5] %}
+              <tr>
+                <td><a href="/journals?query={{ ('acc:' ~ a.account_code)|urlencode }}">{{ a.account_code }} {{ a.account_name }}</a></td>
+                <td style="text-align:right">{{ '{:,}'.format(a.amount) }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div>
+          <h4 style="margin:4px 0;">主要な負債・純資産</h4>
+          <table>
+            <thead><tr><th>科目</th><th style="text-align:right">金額</th></tr></thead>
+            <tbody>
+              {% set combined = (bs.liabilities + bs.equity) | sort(attribute='amount', reverse=True) %}
+              {% for e in combined[:5] %}
+              <tr>
+                <td><a href="/journals?query={{ ('acc:' ~ e.account_code)|urlencode }}">{{ e.account_code }} {{ e.account_name }}</a></td>
+                <td style="text-align:right">{{ '{:,}'.format(e.amount) }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <p class="muted" style="margin-top:6px;">チェック: 資産 = 負債 + 純資産 / {{ '{:,}'.format(bs.total_assets | default(0)) }} = {{ '{:,}'.format((bs.total_liabilities | default(0)) + (bs.total_equity | default(0))) }}</p>
+    {% else %}
+      <p class="muted">データなし</p>
+    {% endif %}
+  </div>
+{% endblock %}

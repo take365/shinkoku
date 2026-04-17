@@ -1,0 +1,36 @@
+{% extends 'layout.html' %}
+{% block content %}
+  <h3>摘要サマリ</h3>
+  <form class="toolbar" method="get" action="/summary/description">
+    <input type="text" name="q" value="{{ q }}" placeholder="摘要に含まれる語句" />
+    <input type="text" name="source" value="{{ source }}" placeholder="source" />
+    <input type="date" name="date_from" value="{{ date_from }}" />
+    <input type="date" name="date_to" value="{{ date_to }}" />
+    <label>並び順
+      <select name="order">
+        <option value="amount" {% if order=='amount' %}selected{% endif %}>金額</option>
+        <option value="count" {% if order=='count' %}selected{% endif %}>件数</option>
+        <option value="name" {% if order=='name' %}selected{% endif %}>摘要</option>
+      </select>
+    </label>
+    <select name="dir">
+      <option value="desc" {% if dir=='desc' %}selected{% endif %}>降順</option>
+      <option value="asc" {% if dir=='asc' %}selected{% endif %}>昇順</option>
+    </select>
+    <button type="submit">更新</button>
+  </form>
+
+  <p class="muted">{{ total_groups }} グループ</p>
+  <table>
+    <thead><tr><th>摘要</th><th>件数</th><th>合計金額</th></tr></thead>
+    <tbody>
+      {% for g in groups %}
+      <tr>
+        <td><a href="/journals?query={{ ('desc:' ~ '\"' ~ (g.description or '') ~ '\"')|urlencode }}">{{ g.description or '(なし)' }}</a></td>
+        <td style="text-align:right">{{ g.journal_count }}</td>
+        <td style="text-align:right">{{ '{:,}'.format(g.total_amount) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}

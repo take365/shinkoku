@@ -1,0 +1,29 @@
+{% extends 'layout.html' %}
+{% block content %}
+  <h3>監査ログ</h3>
+  {% if audit and audit.get('status') == 'ok' %}
+    <p class="muted">{{ audit.total_count }} 件</p>
+  <table>
+    <thead>
+      <tr><th>ID</th><th>journal_id</th><th>年度</th><th>操作</th><th>前:日付</th><th>前:摘要</th><th>前:相手先</th><th>作成時刻</th><th>詳細</th></tr>
+    </thead>
+    <tbody>
+      {% for r in audit.audit_logs %}
+      <tr>
+        <td>{{ r.id }}</td>
+        <td>{{ r.journal_id }}</td>
+        <td>{{ r.fiscal_year }}</td>
+        <td>{{ r.operation }}</td>
+        <td>{{ r.before_date }}</td>
+        <td>{{ r.before_description }}</td>
+        <td>{{ r.before_counterparty }}</td>
+        <td class="muted">{{ r.created_at }}</td>
+        <td><a href="/audit/detail?log_id={{ r.id }}">詳細</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    <p class="muted">データなし</p>
+  {% endif %}
+{% endblock %}

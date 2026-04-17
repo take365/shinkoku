@@ -1,0 +1,59 @@
+{% extends 'layout.html' %}
+{% block content %}
+  <h3>入力元サマリ</h3>
+  <p class="muted">仕訳が参照している入力元ファイルを一覧化します。更新はせず、所在確認と中身確認に寄せた画面です。</p>
+
+  <form class="toolbar" method="get" action="/source-links">
+    <input type="text" name="q" value="{{ q }}" placeholder="ファイル名・パス・sourceで絞り込み" style="min-width:320px" />
+    <label><input type="checkbox" name="only_missing" value="1" {% if only_missing %}checked{% endif %}/> 見つからないファイルのみ</label>
+    <button type="submit">絞り込み</button>
+  </form>
+
+  <div class="grid">
+    <div class="card">
+      <div class="muted">対象ファイル</div>
+      <div style="font-size:24px; font-weight:600">{{ total_files }}</div>
+    </div>
+    <div class="card">
+      <div class="muted">見つかったファイル</div>
+      <div style="font-size:24px; font-weight:600">{{ existing_files }}</div>
+    </div>
+    <div class="card">
+      <div class="muted">見つからないファイル</div>
+      <div style="font-size:24px; font-weight:600">{{ missing_files }}</div>
+    </div>
+    <div class="card">
+      <div class="muted">合計金額</div>
+      <div style="font-size:24px; font-weight:600">{{ '{:,}'.format(total_amount) }}</div>
+    </div>
+  </div>
+
+  <table style="margin-top:16px">
+    <thead>
+      <tr>
+        <th>入力元</th>
+        <th>所在</th>
+        <th>source</th>
+        <th>関連仕訳</th>
+        <th>期間</th>
+        <th>合計金額</th>
+        <th>サイズ</th>
+        <th>状態</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for it in items %}
+      <tr>
+        <td><a href="/source-links/detail?path={{ it.source_file }}">{{ it.source_file }}</a></td>
+        <td class="muted">{{ it.display_path }}</td>
+        <td>{{ it.source }}</td>
+        <td style="text-align:right">{{ it.journal_count }}</td>
+        <td class="muted">{{ it.first_date }} - {{ it.last_date }}</td>
+        <td style="text-align:right">{{ '{:,}'.format(it.total_amount) }}</td>
+        <td style="text-align:right">{% if it.size is not none %}{{ '{:,}'.format(it.size) }}{% endif %}</td>
+        <td>{% if it.exists %}利用可{% else %}<span class="muted">未検出</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}

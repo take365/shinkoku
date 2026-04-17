@@ -1,0 +1,64 @@
+{% extends 'layout.html' %}
+{% block content %}
+  <h3>CSV 取り込み — プレビュー</h3>
+  {% if saved_paths %}
+    <p class="muted">対象ファイル:</p>
+    <ul class="muted">
+      {% for p in saved_paths %}<li>{{ p }}</li>{% endfor %}
+    </ul>
+    <p>{{ total_rows|default(0) }} 行検出（各ファイルのスキップ行は省略）</p>
+
+    <form method="post" action="/import/preview">
+      {% for p in saved_paths %}<input type="hidden" name="saved_paths" value="{{ p }}" />{% endfor %}
+      <label>貸方（クレジット）科目:
+        <select name="credit_code">
+          <option value="2030" {% if default_credit == '2030' %}selected{% endif %}>2030 未払金</option>
+          <option value="1002" {% if default_credit == '1002' %}selected{% endif %}>1002 普通預金</option>
+        </select>
+      </label>
+      <label style="margin-left:8px">source:
+        <input type="text" name="source" value="{{ default_source }}" />
+      </label>
+      <button type="submit">この設定で再プレビュー</button>
+    </form>
+
+    {% if preview_entries %}
+      <form method="post" action="/import/register" style="margin-top:10px">
+        {% for p in saved_paths %}<input type="hidden" name="saved_paths" value="{{ p }}" />{% endfor %}
+        <input type="hidden" name="credit_code" value="{{ default_credit }}" />
+        <input type="hidden" name="source" value="{{ default_source }}" />
+        <button type="submit">この内容で一括登録</button>
+      </form>
+      <table style="margin-top:10px">
+        <thead>
+          <tr><th>日付</th><th>摘要</th><th>借方科目</th><th>金額</th><th>貸方科目</th><th>金額</th></tr>
+        </thead>
+        <tbody>
+          {% for e in preview_entries[:100] %}
+          <tr>
+            <td>{{ e.date }}</td>
+            <td>{{ e.description }}</td>
+            {% set d = e.lines[0] %}
+            {% set c = e.lines[1] %}
+            <td>{{ d.account_code }} {{ account_names.get(d.account_code,'') }}</td>
+            <td style="text-align:right">{{ '{:,}'.format(d.amount) }}</td>
+            <td>{{ c.account_code }} {{ account_names.get(c.account_code,'') }}</td>
+            <td style="text-align:right">{{ '{:,}'.format(c.amount) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if preview_entries|length > 100 %}<p class="muted">…他 {{ preview_entries|length - 100 }} 件</p>{% endif %}
+    {% else %}
+      <p class="muted">プレビューを生成中/未生成</p>
+      <form method="post" action="/import/preview">
+        {% for p in saved_paths %}<input type="hidden" name="saved_paths" value="{{ p }}" />{% endfor %}
+        <input type="hidden" name="credit_code" value="{{ default_credit }}" />
+        <input type="hidden" name="source" value="{{ default_source }}" />
+        <button type="submit">プレビュー生成</button>
+      </form>
+    {% endif %}
+  {% else %}
+    <p class="muted">解析に失敗しました</p>
+  {% endif %}
+{% endblock %}

@@ -1,0 +1,65 @@
+{% extends 'layout.html' %}
+{% block content %}
+  {% set category_labels = {
+    'asset': 'asset（資産）',
+    'liability': 'liability（負債）',
+    'equity': 'equity（純資産）',
+    'revenue': 'revenue（収益）',
+    'expense': 'expense（費用）',
+  } %}
+  <h3>勘定科目サマリ</h3>
+  <form class="toolbar" method="get" action="/trial-balance">
+    <input type="text" name="q" value="{{ q }}" placeholder="勘定科目コード・科目名で絞り込み" />
+    <select name="category">
+      <option value="" {% if not category %}selected{% endif %}>すべての区分</option>
+      <option value="asset" {% if category=='asset' %}selected{% endif %}>asset（資産）</option>
+      <option value="liability" {% if category=='liability' %}selected{% endif %}>liability（負債）</option>
+      <option value="equity" {% if category=='equity' %}selected{% endif %}>equity（純資産）</option>
+      <option value="revenue" {% if category=='revenue' %}selected{% endif %}>revenue（収益）</option>
+      <option value="expense" {% if category=='expense' %}selected{% endif %}>expense（費用）</option>
+    </select>
+    <label>並び順
+      <select name="order">
+        <option value="amount" {% if order=='amount' %}selected{% endif %}>残高</option>
+        <option value="name" {% if order=='name' %}selected{% endif %}>科目名</option>
+        <option value="code" {% if order=='code' %}selected{% endif %}>科目コード</option>
+        <option value="count" {% if order=='count' %}selected{% endif %}>動きあり優先</option>
+      </select>
+    </label>
+    <select name="dir">
+      <option value="desc" {% if dir=='desc' %}selected{% endif %}>降順</option>
+      <option value="asc" {% if dir=='asc' %}selected{% endif %}>昇順</option>
+    </select>
+    <button type="submit">更新</button>
+  </form>
+
+  <p class="muted">{{ total_groups }} 勘定科目</p>
+  {% if tb and tb.get('status','ok') != 'error' %}
+    <table>
+      <thead>
+        <tr>
+          <th style="width:110px">総勘定元帳</th>
+          <th>勘定科目</th>
+          <th>区分</th>
+          <th>借方合計</th>
+          <th>貸方合計</th>
+          <th>残高</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in tb.accounts %}
+        <tr>
+          <td><a href="/gl/{{ a.account_code }}">総勘定元帳</a></td>
+          <td><a href="/journals?query={{ ('acc:' ~ a.account_code)|urlencode }}">{{ a.account_code }} {{ a.account_name }}</a></td>
+          <td class="muted"><a href="/trial-balance?category={{ a.category }}">{{ category_labels.get(a.category, a.category) }}</a></td>
+          <td style="text-align:right">{{ '{:,}'.format(a.debit_total) }}</td>
+          <td style="text-align:right">{{ '{:,}'.format(a.credit_total) }}</td>
+          <td style="text-align:right">{{ '{:,}'.format(a.balance) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">データがありません。</p>
+  {% endif %}
+{% endblock %}

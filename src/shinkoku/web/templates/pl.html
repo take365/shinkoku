@@ -1,0 +1,51 @@
+{% extends 'layout.html' %}
+{% block content %}
+  <h3>損益計算書（フル）</h3>
+  {% if pl and pl.get('status','ok') != 'error' %}
+    <div class="grid" style="grid-template-columns: 1fr 1fr; gap:16px;">
+      <div class="card">
+        <h4>収益</h4>
+        <table>
+          <thead><tr><th>科目</th><th style="text-align:right">金額</th></tr></thead>
+          <tbody>
+            {% for r in pl.revenues %}
+            <tr>
+              <td><a href="/journals?query={{ ('acc:' ~ r.account_code)|urlencode }}">{{ r.account_code }} {{ r.account_name }}</a></td>
+              <td style="text-align:right">{{ '{:,}'.format(r.amount) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr>
+              <th>収益合計</th>
+              <th style="text-align:right">{{ '{:,}'.format(pl.total_revenue | default(0)) }}</th>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <div class="card">
+        <h4>費用</h4>
+        <table>
+          <thead><tr><th>科目</th><th style="text-align:right">金額</th></tr></thead>
+          <tbody>
+            {% for e in pl.expenses %}
+            <tr>
+              <td><a href="/journals?query={{ ('acc:' ~ e.account_code)|urlencode }}">{{ e.account_code }} {{ e.account_name }}</a></td>
+              <td style="text-align:right">{{ '{:,}'.format(e.amount) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr>
+              <th>費用合計</th>
+              <th style="text-align:right">{{ '{:,}'.format(pl.total_expense | default(0)) }}</th>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+    <p style="margin-top:12px"><strong>当期損益: {{ '{:,}'.format(pl.net_income | default(0)) }}</strong></p>
+  {% else %}
+    <p class="muted">データなし</p>
+  {% endif %}
+{% endblock %}

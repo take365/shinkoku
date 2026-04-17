@@ -1,0 +1,15 @@
+{% extends 'layout.html' %}
+{% block content %}
+  <h3>AI読み取り(β) — レシート画像からの抽出</h3>
+  <p class="muted">LM Studio の Vision モデルに接続して、レシート画像を JSON に抽出します。</p>
+  <ul class="muted">
+    <li>接続先: {{ api_url }} / model: {{ model }}</li>
+    <li>対応: JPG/PNG（8MBまで）</li>
+  </ul>
+
+  <form method="post" action="/ai/reading-receipt" enctype="multipart/form-data" style="margin-top:12px; padding:12px; border:1px dashed #aaa; border-radius:6px; background:#fafafa">
+    <input type="file" name="files" accept="image/png,image/jpeg,application/pdf" multiple required />
+    <input type="text" name="note" placeholder="ヒント（任意: 店名やカテゴリなど）" style="width:320px; margin-left:8px" />
+    <button type="submit">読み取り</button>
+  </form>
+{% endblock %}

@@ -1,0 +1,123 @@
+{% if res and res.get('status', 'ok') != 'error' %}
+  {% set prev = offset - limit if offset - limit > 0 else 0 %}
+  {% set next = offset + limit if res and (offset + limit) < res.total_count else offset %}
+  {% set page = (offset // limit) + 1 %}
+  {% set total_pages = ((res.total_count + limit - 1) // limit) if res else 1 %}
+  <p class="muted">
+    {{ res.total_count }} 件
+    {% if show_total_amount %}
+      / 合計金額 {{ '{:,}'.format(total_amount) }} 円
+    {% endif %}
+  </p>
+  <div class="toolbar" style="margin-top:6px;">
+    <a href="/journals?query={{ query|urlencode }}&q={{ q|urlencode }}&source={{ source|urlencode }}&date_from={{ date_from }}&date_to={{ date_to }}&account_code={{ account_code|urlencode }}&counterparty={{ counterparty|urlencode }}&source_file={{ source_file|urlencode }}&amount_min={{ amount_min }}&amount_max={{ amount_max }}&limit={{ limit }}&offset={{ prev }}&show_source={{ 1 if show_source else 0 }}">&lsaquo; 前へ</a>
+    <span class="muted" style="margin:0 8px">ページ {{ page }}/{{ total_pages }}</span>
+    <a href="/journals?query={{ query|urlencode }}&q={{ q|urlencode }}&source={{ source|urlencode }}&date_from={{ date_from }}&date_to={{ date_to }}&account_code={{ account_code|urlencode }}&counterparty={{ counterparty|urlencode }}&source_file={{ source_file|urlencode }}&amount_min={{ amount_min }}&amount_max={{ amount_max }}&limit={{ limit }}&offset={{ next }}&show_source={{ 1 if show_source else 0 }}">次へ &rsaquo;</a>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th rowspan="2">変更</th>
+        <th rowspan="2">
+          <a href="/journals?query={{ set_query_sort(query or q, 'id', 'asc' if sort != 'id' or dir == 'desc' else 'desc')|urlencode }}&q=&source={{ source|urlencode }}&date_from={{ date_from }}&date_to={{ date_to }}&account_code={{ account_code|urlencode }}&counterparty={{ counterparty|urlencode }}&source_file={{ source_file|urlencode }}&amount_min={{ amount_min }}&amount_max={{ amount_max }}&limit={{ limit }}&offset={{ offset }}&show_source={{ 1 if show_source else 0 }}">
+            ID{% if sort == 'id' %}{% if dir == 'desc' %} &#9660;{% else %} &#9650;{% endif %}{% endif %}
+          </a>
+        </th>
+        <th rowspan="2">
+          <a href="/journals?query={{ set_query_sort(query or q, 'date', 'asc' if sort != 'date' or dir == 'desc' else 'desc')|urlencode }}&q=&source={{ source|urlencode }}&date_from={{ date_from }}&date_to={{ date_to }}&account_code={{ account_code|urlencode }}&counterparty={{ counterparty|urlencode }}&source_file={{ source_file|urlencode }}&amount_min={{ amount_min }}&amount_max={{ amount_max }}&limit={{ limit }}&offset={{ offset }}&show_source={{ 1 if show_source else 0 }}">
+            日付{% if sort == 'date' %}{% if dir == 'desc' %} &#9660;{% else %} &#9650;{% endif %}{% endif %}
+          </a>
+        </th>
+        <th rowspan="2">摘要</th>
+        {% if show_source %}
+          <th rowspan="2">source</th>
+          <th rowspan="2">
+            <a href="/journals?query={{ set_query_sort(query or q, 'source_file', 'asc' if sort != 'source_file' or dir == 'desc' else 'desc')|urlencode }}&q=&source={{ source|urlencode }}&date_from={{ date_from }}&date_to={{ date_to }}&account_code={{ account_code|urlencode }}&counterparty={{ counterparty|urlencode }}&source_file={{ source_file|urlencode }}&amount_min={{ amount_min }}&amount_max={{ amount_max }}&limit={{ limit }}&offset={{ offset }}&show_source={{ 1 if show_source else 0 }}">
+              入力元{% if sort == 'source_file' %}{% if dir == 'desc' %} &#9660;{% else %} &#9650;{% endif %}{% endif %}
+            </a>
+          </th>
+        {% endif %}
+        <th rowspan="2">取引先</th>
+        <th colspan="2">借方</th>
+        <th colspan="2">貸方</th>
+      </tr>
+      <tr>
+        <th>勘定科目</th>
+        <th>金額</th>
+        <th>勘定科目</th>
+        <th>金額</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for j in res.journals %}
+        {% set debits = j.lines | selectattr('side', 'equalto', 'debit') | list %}
+        {% set credits = j.lines | selectattr('side', 'equalto', 'credit') | list %}
+        {% set journal_amount = debits | sum(attribute='amount') %}
+        {% set n = [debits|length, credits|length] | max %}
+        {% for i in range(0, n) %}
+          <tr>
+            {% if i == 0 %}
+              <td>
+                <button
+                  type="button"
+                  onclick="copyJournalChangeRequest(this)"
+                  data-journal-id="{{ j.id }}"
+                  data-date="{{ j.date }}"
+                  data-description="{{ (j.description or '摘要なし') | replace('\n', ' ') }}"
+                  data-amount="{{ journal_amount }}"
+                  data-counterparty="{{ (j.counterparty or '未設定') | replace('\n', ' ') }}"
+                  title="変更依頼文をコピー"
+                  style="border:0;background:transparent;padding:0;cursor:pointer"
+                >
+                  <img src="/static/change-request-copy.png" alt="変更依頼をコピー" style="width:24px;height:24px;display:block" />
+                </button>
+              </td>
+              <td>{{ j.id }}</td>
+              <td><a href="/journals?query={{ ('from:' ~ j.date ~ ' to:' ~ j.date)|urlencode }}">{{ j.date }}</a></td>
+              <td><a href="/journals?query={{ ('desc:' ~ '\"' ~ (j.description or '') ~ '\"')|urlencode }}">{{ j.description or '摘要なし' }}</a></td>
+              {% if show_source %}
+                <td class="muted">{{ j.source or '' }}</td>
+                <td class="muted">{% if j.source_file %}<a href="/source-links/detail?path={{ j.source_file|urlencode }}">{{ j.source_file }}</a>{% endif %}</td>
+              {% endif %}
+              <td class="muted">{% if j.counterparty %}<a href="/journals?query={{ ('cp:' ~ '\"' ~ j.counterparty ~ '\"')|urlencode }}">{{ j.counterparty }}</a>{% else %}未設定{% endif %}</td>
+            {% else %}
+              <td></td>
+              <td></td>
+              <td></td>
+              <td></td>
+              {% if show_source %}
+                <td></td>
+                <td></td>
+              {% endif %}
+              <td></td>
+            {% endif %}
+
+            {% if i < debits|length %}
+              <td><a href="/journals?query={{ ('acc:' ~ debits[i].account_code)|urlencode }}">{{ debits[i].account_code }} {{ account_names.get(debits[i].account_code, '') }}</a></td>
+              <td style="text-align:right">{{ '{:,}'.format(debits[i].amount) }}</td>
+            {% else %}
+              <td></td>
+              <td></td>
+            {% endif %}
+
+            {% if i < credits|length %}
+              <td><a href="/journals?query={{ ('acc:' ~ credits[i].account_code)|urlencode }}">{{ credits[i].account_code }} {{ account_names.get(credits[i].account_code, '') }}</a></td>
+              <td style="text-align:right">{{ '{:,}'.format(credits[i].amount) }}</td>
+            {% else %}
+              <td></td>
+              <td></td>
+            {% endif %}
+          </tr>
+        {% endfor %}
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="toolbar">
+    <a href="/journals?query={{ query|urlencode }}&q={{ q|urlencode }}&source={{ source|urlencode }}&date_from={{ date_from }}&date_to={{ date_to }}&account_code={{ account_code|urlencode }}&counterparty={{ counterparty|urlencode }}&source_file={{ source_file|urlencode }}&amount_min={{ amount_min }}&amount_max={{ amount_max }}&limit={{ limit }}&offset={{ prev }}&show_source={{ 1 if show_source else 0 }}">&lsaquo; 前へ</a>
+    <span class="muted" style="margin:0 8px">ページ {{ page }}/{{ total_pages }}</span>
+    <a href="/journals?query={{ query|urlencode }}&q={{ q|urlencode }}&source={{ source|urlencode }}&date_from={{ date_from }}&date_to={{ date_to }}&account_code={{ account_code|urlencode }}&counterparty={{ counterparty|urlencode }}&source_file={{ source_file|urlencode }}&amount_min={{ amount_min }}&amount_max={{ amount_max }}&limit={{ limit }}&offset={{ next }}&show_source={{ 1 if show_source else 0 }}">次へ &rsaquo;</a>
+  </div>
+{% else %}
+  <p class="muted">データがありません。</p>
+{% endif %}

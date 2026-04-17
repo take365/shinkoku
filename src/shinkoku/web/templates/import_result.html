@@ -1,0 +1,12 @@
+{% extends 'layout.html' %}
+{% block content %}
+  <h3>CSV 取り込み — 登録結果</h3>
+  <p class="muted">ファイル: {{ saved_path }}</p>
+  {% if register_result %}
+    <pre>{{ register_result | tojson(indent=2) }}</pre>
+  {% else %}
+    <p class="muted">結果がありません</p>
+  {% endif %}
+  <p><a href="/journals?source=csv_import">仕訳一覧に戻る</a></p>
+{% endblock %}
+

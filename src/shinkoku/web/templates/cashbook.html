@@ -1,0 +1,27 @@
+{% extends 'layout.html' %}
+{% block content %}
+  <h3>出納帳: {{ account_code }}</h3>
+  {% if gl and gl.get('status','ok') != 'error' %}
+    <p class="muted">期首残高: {{ '{:,}'.format(gl.opening_balance) }} / 期末残高: {{ '{:,}'.format(gl.closing_balance) }}</p>
+    <div class="toolbar"><a href="/gl/{{ account_code }}.csv">CSVダウンロード</a></div>
+    <table>
+      <thead><tr><th>ID</th><th>日付</th><th>摘要</th><th>相手勘定</th><th>入金(借方)</th><th>出金(貸方)</th><th>残高</th></tr></thead>
+      <tbody>
+        {% for e in gl.entries %}
+        <tr>
+          <td>{{ e.journal_id }}</td>
+          <td>{{ e.date }}</td>
+          <td>{{ e.description }}</td>
+          <td>{{ e.counter_account_code }} {{ e.counter_account_name }}</td>
+          <td style="text-align:right">{{ '{:,}'.format(e.debit) }}</td>
+          <td style="text-align:right">{{ '{:,}'.format(e.credit) }}</td>
+          <td style="text-align:right">{{ '{:,}'.format(e.balance) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">データなし</p>
+  {% endif %}
+{% endblock %}
+
