@@ -18,6 +18,7 @@ playground/
 # Ignore concrete scratch/output locations instead of every `templates/` directory.
 specs/
 .playwright-cli/
+.codex
 
 # Research screenshots
 skills/e-tax/research/*.png
@@ -31,6 +32,8 @@ shinkoku.db
 shinkoku.db-wal
 shinkoku.db-shm
 work/
+*.err.log
+*.out.log
 
 # Local Codex/CUA skill installs
 .agents/skills/
