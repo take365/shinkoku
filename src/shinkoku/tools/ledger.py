@@ -310,11 +310,29 @@ def ledger_search(*, db_path: str, params: JournalSearchParams) -> dict:
 
         # 金額範囲検索・勘定科目検索には journal_lines の JOIN が必要
         needs_join = bool(
-            params.account_code or params.amount_min is not None or params.amount_max is not None
+            params.account_code
+            or params.category
+            or params.amount_min is not None
+            or params.amount_max is not None
         )
 
         if needs_join:
             join_conditions = []
+            join_from = (
+                "FROM journals j "
+                "INNER JOIN journal_lines jl ON jl.journal_id = j.id "
+            )
+            if params.category:
+                categories = [c.strip() for c in str(params.category).split(",") if c.strip()]
+                if categories:
+                    join_from += "INNER JOIN accounts a ON a.code = jl.account_code "
+                    if len(categories) == 1:
+                        join_conditions.append("a.category = ?")
+                        bind_params.append(categories[0])
+                    else:
+                        placeholders = ", ".join("?" for _ in categories)
+                        join_conditions.append(f"a.category IN ({placeholders})")
+                        bind_params.extend(categories)
             if params.account_code:
                 join_conditions.append("jl.account_code = ?")
                 bind_params.append(params.account_code)
@@ -326,8 +344,7 @@ def ledger_search(*, db_path: str, params: JournalSearchParams) -> dict:
                 bind_params.append(params.amount_max)
             join_where = " AND ".join(join_conditions)
             base_query = (
-                "FROM journals j "
-                "INNER JOIN journal_lines jl ON jl.journal_id = j.id "
+                join_from +
                 f"WHERE {where_clause} AND {join_where}"
             )
         else:

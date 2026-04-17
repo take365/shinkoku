@@ -1,0 +1,200 @@
+{% extends 'layout.html' %}
+{% block content %}
+  <div class="toolbar" style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:4px;">
+    <h3 style="margin:0;">仕訳一覧</h3>
+    <div class="muted" style="white-space:nowrap;">
+      <a href="/import">CSVインポート</a>
+      &nbsp;|&nbsp;
+      <a href="/journals.csv?query={{ query|urlencode }}&q={{ q|urlencode }}&source={{ source|urlencode }}&date_from={{ date_from }}&date_to={{ date_to }}&account_code={{ account_code|urlencode }}&counterparty={{ counterparty|urlencode }}&source_file={{ source_file|urlencode }}&amount_min={{ amount_min }}&amount_max={{ amount_max }}&limit={{ limit }}">CSVダウンロード</a>
+    </div>
+  </div>
+  {% if active_filters %}
+    <p class="muted">絞り込み: {{ active_filters | join(' / ') }}</p>
+  {% endif %}
+  <form
+    id="journals-form"
+    class="toolbar"
+    method="get"
+    action="/journals"
+  >
+    <input id="query-input" type="text" name="query" value="{{ query }}" placeholder='検索式 例: "業務委託売上" cp:ココナラ acc:4001 cat:revenue from:2025-01-01 mfrom:10000 mto:50000 sort:date desc' style="min-width: 34rem;" />
+    <button type="submit">再検索</button>
+    <button
+      type="button"
+      onclick="toggleQueryHelp()"
+      title="検索式ヘルプ"
+      aria-label="検索式ヘルプ"
+      style="border:1px solid #ccc;background:#fff;border-radius:999px;width:28px;height:28px;cursor:pointer;font-weight:700"
+    >?</button>
+    <input type="hidden" name="limit" value="{{ limit }}" />
+    <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      <input id="date-from-helper" type="date" value="{{ date_from }}" onchange="applyDateHelpers(true)" />
+      <input id="date-to-helper" type="date" value="{{ date_to }}" onchange="applyDateHelpers(true)" />
+      <label><input type="checkbox" name="show_source" value="1" {% if show_source %}checked{% endif %} onchange="this.form.requestSubmit()"/> 入力元を表示</label>
+      <input type="hidden" name="q" value="{{ q }}" />
+      <input type="hidden" name="source" value="{{ source }}" />
+      <input type="hidden" name="date_from" value="" />
+      <input type="hidden" name="date_to" value="" />
+      <input type="hidden" name="account_code" value="{{ account_code }}" />
+      <input type="hidden" name="counterparty" value="{{ counterparty }}" />
+      <input type="hidden" name="source_file" value="{{ source_file }}" />
+    </div>
+  </form>
+
+  <div
+    id="query-help"
+    style="display:none;max-width:820px;margin:8px 0 12px;padding:12px 14px;border:1px solid #ddd;border-radius:8px;background:#fafafa"
+  >
+    <div style="display:flex;align-items:start;justify-content:space-between;gap:12px;">
+      <div>
+        <strong>検索式ヘルプ</strong>
+        <div class="muted" style="margin-top:4px;">スペース区切りで AND、<code>"..."</code> で完全一致、<code>-語</code> で除外です。</div>
+      </div>
+      <button type="button" onclick="toggleQueryHelp(false)" style="border:0;background:transparent;cursor:pointer;font-size:16px;">×</button>
+    </div>
+    <table style="margin-top:10px;">
+      <thead>
+        <tr>
+          <th style="width:110px;">キー</th>
+          <th style="width:180px;">対象</th>
+          <th>例</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td><code>acc:</code></td><td>勘定科目コード</td><td><code>acc:5270</code> で雑費などの勘定科目に絞り込み</td></tr>
+        <tr><td><code>cat:</code></td><td>区分</td><td><code>cat:revenue</code>（売上）、<code>cat:expense</code>（費用）、<code>cat:asset</code>（資産）、<code>cat:liability</code>（負債）、<code>cat:equity</code>（純資産）、<code>cat:revenue,expense</code>（売上または費用）</td></tr>
+        <tr><td><code>desc:</code></td><td>摘要</td><td><code>desc:"業務委託売上 2025-11"</code> のように摘要を部分一致で絞り込み</td></tr>
+        <tr><td><code>cp:</code></td><td>取引先</td><td><code>cp:"ココナラ"</code> のように取引先を部分一致で絞り込み</td></tr>
+        <tr><td><code>src:</code></td><td>source</td><td><code>src:csv_import</code> のように元の source で絞り込み</td></tr>
+        <tr><td><code>file:</code></td><td>入力元</td><td><code>file:"rakuten_2025-01.csv"</code> のように入力元ファイルで絞り込み</td></tr>
+        <tr><td><code>from:</code></td><td>日付開始</td><td><code>from:2025-01-01</code> 以降</td></tr>
+        <tr><td><code>to:</code></td><td>日付終了</td><td><code>to:2025-01-31</code> 以前</td></tr>
+        <tr><td><code>mfrom:</code></td><td>金額下限</td><td><code>mfrom:10000</code> 以上</td></tr>
+        <tr><td><code>mto:</code></td><td>金額上限</td><td><code>mto:50000</code> 以下</td></tr>
+        <tr><td><code>sort:</code></td><td>並び順</td><td><code>sort:date desc</code>、<code>sort:id asc</code>、<code>sort:source_file asc</code></td></tr>
+      </tbody>
+    </table>
+    <div style="margin-top:12px;">
+      <strong>自由語検索の扱い</strong>
+      <div class="muted" style="margin-top:4px;">キーなしの語は自由検索です。摘要、取引先、勘定科目コードや名称などから広めに探します。</div>
+    </div>
+    <div style="margin-top:12px;">
+      <strong>全部入り例</strong>
+      <div style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <code id="query-help-example">desc:"業務委託売上" cp:"ココナラ" acc:4001 cat:revenue from:2025-01-01 to:2025-12-31 mfrom:10000 mto:300000 sort:date desc</code>
+        <button type="button" onclick="fillQueryExample()">例文を検索欄に入れる</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="journals-container">
+    {% include 'partials/journals_table.html' %}
+  </div>
+
+  <div
+    id="copy-toast"
+    style="display:none;position:fixed;right:20px;bottom:20px;padding:10px 14px;background:#222;color:#fff;border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,0.2);z-index:9999"
+  >
+    変更指示用にクリップボードにコピーしました
+  </div>
+
+  <script>
+    let copyToastTimer = null;
+
+    function setQueryDateToken(query, key, value) {
+      const pattern = new RegExp(`(^|\\s)${key}:[^\\s]+`, "g");
+      const cleaned = query.replace(pattern, " ").replace(/\s+/g, " ").trim();
+      if (!value) {
+        return cleaned;
+      }
+      return `${cleaned ? `${cleaned} ` : ""}${key}:${value}`.trim();
+    }
+
+    function applyDateHelpers(submitForm) {
+      const queryInput = document.getElementById("query-input");
+      const fromInput = document.getElementById("date-from-helper");
+      const toInput = document.getElementById("date-to-helper");
+      if (!queryInput || !fromInput || !toInput) {
+        return;
+      }
+      let query = queryInput.value || "";
+      query = setQueryDateToken(query, "from", fromInput.value);
+      query = setQueryDateToken(query, "to", toInput.value);
+      queryInput.value = query;
+      if (submitForm) {
+        const form = document.getElementById("journals-form");
+        if (form) {
+          form.requestSubmit();
+        }
+      }
+    }
+
+    function toggleQueryHelp(forceOpen) {
+      const help = document.getElementById("query-help");
+      if (!help) {
+        return;
+      }
+      const shouldOpen = typeof forceOpen === "boolean" ? forceOpen : help.style.display === "none";
+      help.style.display = shouldOpen ? "block" : "none";
+    }
+
+    function showCopyToast(message) {
+      const toast = document.getElementById("copy-toast");
+      if (!toast) {
+        return;
+      }
+      toast.textContent = message || "変更指示用にクリップボードにコピーしました";
+      toast.style.display = "block";
+      window.clearTimeout(copyToastTimer);
+      copyToastTimer = window.setTimeout(() => {
+        toast.style.display = "none";
+      }, 1800);
+    }
+
+    function fillQueryExample() {
+      const example = document.getElementById("query-help-example");
+      const queryInput = document.getElementById("query-input");
+      if (!example || !queryInput) {
+        return;
+      }
+      queryInput.value = example.textContent || "";
+      queryInput.focus();
+    }
+
+    async function copyJournalChangeRequest(button) {
+      const journalId = button.dataset.journalId || "";
+      const date = button.dataset.date || "";
+      const description = button.dataset.description || "摘要なし";
+      const amount = button.dataset.amount || "0";
+      const counterparty = button.dataset.counterparty || "未設定";
+      const formattedAmount = Number(amount || 0).toLocaleString("ja-JP");
+      const text = [
+        "journal スキルの想定で処理して",
+        "",
+        "ーーーーーーーーーーーーー",
+        `仕訳ID: ${journalId}`,
+        `日付: ${date}`,
+        `摘要: ${description}`,
+        `金額: ${formattedAmount}円`,
+        `現在の取引先: ${counterparty}`,
+        "",
+        "ーーーーーーーーーーーーー",
+        "変更内容:",
+      ].join("\n");
+
+      try {
+        await navigator.clipboard.writeText(text);
+        const originalTitle = button.title;
+        button.classList.add("copied");
+        button.title = "コピーしました";
+        showCopyToast();
+        window.setTimeout(() => {
+          button.classList.remove("copied");
+          button.title = originalTitle;
+        }, 1400);
+      } catch (error) {
+        window.prompt("変更指示文をコピーしてください", text);
+      }
+    }
+  </script>
+{% endblock %}

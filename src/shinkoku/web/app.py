@@ -120,6 +120,17 @@ def _blank_to_none(value: str | None) -> str | None:
     return stripped or None
 
 
+def _blank_to_int(value: str | int | None) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    stripped = value.strip()
+    if not stripped:
+        return None
+    return int(stripped)
+
+
 def _quote_query_token(token: str) -> str:
     if not token:
         return token
@@ -157,11 +168,14 @@ def _parse_journal_query(raw_query: str | None) -> dict[str, Any]:
         "counterparty_terms": [],
         "q": None,
         "account_code": None,
+        "category": None,
         "counterparty": None,
         "source": None,
         "source_file": None,
         "date_from": None,
         "date_to": None,
+        "amount_min": None,
+        "amount_max": None,
         "sort": None,
         "dir": None,
     }
@@ -191,6 +205,8 @@ def _parse_journal_query(raw_query: str | None) -> dict[str, Any]:
                 parsed["counterparty_terms"].append(value)
             elif key == "acc":
                 parsed["account_code"] = value
+            elif key == "cat":
+                parsed["category"] = value.lower()
             elif key == "src":
                 parsed["source"] = value
             elif key == "file":
@@ -199,6 +215,10 @@ def _parse_journal_query(raw_query: str | None) -> dict[str, Any]:
                 parsed["date_from"] = value
             elif key == "to":
                 parsed["date_to"] = value
+            elif key == "mfrom":
+                parsed["amount_min"] = value
+            elif key == "mto":
+                parsed["amount_max"] = value
             elif key == "sort":
                 parsed["sort"] = value
             continue
@@ -286,20 +306,9 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
         # Avoid 404 noise; return no content
         return HTMLResponse(status_code=204)
 
-    @app.get("/", response_class=HTMLResponse)
-    def index(request: Request) -> str:
-        # Simple dashboard: show PL totals summary and links
-        pl = ledger_pl(db_path=app.state.db_path, fiscal_year=app.state.fiscal_year)
-        bs = ledger_bs(db_path=app.state.db_path, fiscal_year=app.state.fiscal_year)
-        tb = ledger_trial_balance(db_path=app.state.db_path, fiscal_year=app.state.fiscal_year)
-        template = env.get_template("index.html")
-        return template.render(
-            request=request,
-            fiscal_year=app.state.fiscal_year,
-            pl=pl,
-            bs=bs,
-            tb=tb,
-        )
+    @app.get("/")
+    def index() -> RedirectResponse:
+        return RedirectResponse(url="/journals", status_code=307)
 
     @app.get("/trial-balance", response_class=HTMLResponse)
     def trial_balance(
@@ -385,6 +394,8 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
         account_code: str | None = None,
         counterparty: str | None = None,
         source_file: str | None = None,
+        amount_min: str | None = None,
+        amount_max: str | None = None,
         limit: int = 100,
         offset: int = 0,
         show_source: int = 0,
@@ -399,11 +410,14 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
             date_to = _blank_to_none(date_to)
             account_code = _blank_to_none(account_code)
             parsed_query = _parse_journal_query(query)
+            amount_min_value = _blank_to_int(parsed_query["amount_min"]) if query else _blank_to_int(amount_min)
+            amount_max_value = _blank_to_int(parsed_query["amount_max"]) if query else _blank_to_int(amount_max)
             effective_q = parsed_query["q"] if query else q
             effective_source = parsed_query["source"] or source if query else source
             effective_date_from = parsed_query["date_from"] or date_from if query else date_from
             effective_date_to = parsed_query["date_to"] or date_to if query else date_to
             effective_account_code = parsed_query["account_code"] or account_code if query else account_code
+            effective_category = parsed_query["category"] if query else None
             effective_counterparty = counterparty
             effective_source_file = parsed_query["source_file"] or source_file if query else source_file
             effective_sort = parsed_query["sort"] or sort if query else sort
@@ -416,8 +430,11 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
                 date_from=effective_date_from,
                 date_to=effective_date_to,
                 account_code=effective_account_code,
+                category=effective_category,
                 description_contains=effective_q if not query else None,
                 counterparty_contains=effective_counterparty,
+                amount_min=amount_min_value,
+                amount_max=amount_max_value,
                 source=effective_source,
                 source_file=effective_source_file,
                 limit=fetch_limit,
@@ -469,8 +486,11 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
                 or effective_date_from
                 or effective_date_to
                 or effective_account_code
+                or effective_category
                 or effective_counterparty
                 or effective_source_file
+                or amount_min_value is not None
+                or amount_max_value is not None
             )
             total_amount = 0
             if has_filters:
@@ -491,8 +511,11 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
                 date_from=effective_date_from or "",
                 date_to=effective_date_to or "",
                 account_code=effective_account_code or "",
+                category=effective_category or "",
                 counterparty=effective_counterparty or "",
                 source_file=effective_source_file or "",
+                amount_min="" if amount_min_value is None else amount_min_value,
+                amount_max="" if amount_max_value is None else amount_max_value,
                 limit=limit,
                 offset=offset,
                 res=result,
@@ -508,8 +531,11 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
                         f"摘要条件: {' / '.join(parsed_query['description_terms'])}" if parsed_query["description_terms"] else "",
                         f"取引先条件: {' / '.join(parsed_query['counterparty_terms'])}" if parsed_query["counterparty_terms"] else "",
                         f"勘定科目: {effective_account_code} {names.get(effective_account_code or '', '')}".strip() if effective_account_code else "",
+                        f"区分: {effective_category}（{ {'asset': '資産', 'liability': '負債', 'equity': '純資産', 'revenue': '売上', 'expense': '費用'}.get(effective_category, effective_category) }）" if effective_category else "",
                         f"取引先: {effective_counterparty}" if effective_counterparty else "",
                         f"入力元: {effective_source_file}" if effective_source_file else "",
+                        f"金額下限: {amount_min_value:,}円" if amount_min_value is not None else "",
+                        f"金額上限: {amount_max_value:,}円" if amount_max_value is not None else "",
                         f"検索: {effective_q}" if effective_q and not query else "",
                         f"source: {effective_source}" if effective_source else "",
                         f"期間: {effective_date_from or '開始日なし'} - {effective_date_to or '終了日なし'}" if (effective_date_from or effective_date_to) else "",
@@ -761,6 +787,53 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
         conn = get_connection(app.state.db_path)
         try:
             rows = conn.execute(sql, params).fetchall()
+            balance_where = ["j.fiscal_year = ?"]
+            balance_params: list = [app.state.fiscal_year]
+            if source:
+                balance_where.append("j.source = ?")
+                balance_params.append(source)
+            balance_where_clause = " AND ".join(balance_where)
+
+            opening_rows = conn.execute(
+                "SELECT a.category, COALESCE(SUM(ob.amount), 0) "
+                "FROM opening_balances ob "
+                "INNER JOIN accounts a ON a.code = ob.account_code "
+                "WHERE ob.fiscal_year = ? AND a.category IN ('asset', 'liability', 'equity') "
+                "GROUP BY a.category",
+                (app.state.fiscal_year,),
+            ).fetchall()
+            opening_totals = {str(r[0]): int(r[1] or 0) for r in opening_rows}
+
+            monthly_balance_rows = conn.execute(
+                "SELECT substr(j.date,1,7) AS ym, "
+                "SUM(CASE WHEN a.category='asset' AND jl.side='debit' THEN jl.amount "
+                "         WHEN a.category='asset' AND jl.side='credit' THEN -jl.amount ELSE 0 END) AS asset_delta, "
+                "SUM(CASE WHEN a.category='liability' AND jl.side='credit' THEN jl.amount "
+                "         WHEN a.category='liability' AND jl.side='debit' THEN -jl.amount ELSE 0 END) AS liability_delta, "
+                "SUM(CASE WHEN a.category='equity' AND jl.side='credit' THEN jl.amount "
+                "         WHEN a.category='equity' AND jl.side='debit' THEN -jl.amount ELSE 0 END) AS equity_delta "
+                "FROM journals j "
+                "INNER JOIN journal_lines jl ON jl.journal_id = j.id "
+                "INNER JOIN accounts a ON a.code = jl.account_code "
+                f"WHERE {balance_where_clause} AND a.category IN ('asset', 'liability', 'equity') "
+                "GROUP BY ym ORDER BY ym",
+                balance_params,
+            ).fetchall()
+            cumulative_balances: dict[str, dict[str, int]] = {}
+            asset_balance = int(opening_totals.get("asset", 0))
+            liability_balance = int(opening_totals.get("liability", 0))
+            equity_balance = int(opening_totals.get("equity", 0))
+            for r in monthly_balance_rows:
+                ym = str(r[0] or "")
+                asset_balance += int(r[1] or 0)
+                liability_balance += int(r[2] or 0)
+                equity_balance += int(r[3] or 0)
+                cumulative_balances[ym] = {
+                    "asset_balance": asset_balance,
+                    "liability_balance": liability_balance,
+                    "equity_balance": equity_balance,
+                }
+
             items = []
             for r in rows:
                 ym = r[0]
@@ -770,6 +843,14 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
                 year = int(ym[:4])
                 month = int(ym[5:7])
                 month_end = calendar.monthrange(year, month)[1]
+                balances = cumulative_balances.get(
+                    ym,
+                    {
+                        "asset_balance": int(opening_totals.get("asset", 0)),
+                        "liability_balance": int(opening_totals.get("liability", 0)),
+                        "equity_balance": int(opening_totals.get("equity", 0)),
+                    },
+                )
                 items.append(
                     {
                         "ym": ym,
@@ -778,6 +859,9 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
                         "revenue": revenue,
                         "expense": expense,
                         "net": net,
+                        "asset_balance": balances["asset_balance"],
+                        "liability_balance": balances["liability_balance"],
+                        "equity_balance": balances["equity_balance"],
                     }
                 )
             # totals
@@ -846,8 +930,9 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
         )
 
     # ========== Cashbook ==========
-    @app.get("/cashbook", response_class=HTMLResponse)
-    def cashbook_index(request: Request) -> str:
+    # removed cashbook routes
+    def cashbook_index(request: Request) -> RedirectResponse:
+        return RedirectResponse(url="/journals", status_code=307)
         # Suggest accounts whose name includes 現金/預金
         conn = get_connection(app.state.db_path)
         try:
@@ -862,6 +947,7 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
 
     @app.get("/cashbook/{account_code}", response_class=HTMLResponse)
     def cashbook_view(request: Request, account_code: str) -> str:
+        return RedirectResponse(url=f"/gl/{account_code}", status_code=307)
         gl = ledger_general_ledger(
             db_path=app.state.db_path,
             fiscal_year=app.state.fiscal_year,
@@ -1169,6 +1255,8 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
         account_code: str | None = None,
         counterparty: str | None = None,
         source_file: str | None = None,
+        amount_min: str | None = None,
+        amount_max: str | None = None,
         limit: int = 1000,
         offset: int = 0,
     ) -> StreamingResponse:
@@ -1179,11 +1267,14 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
         date_to = _blank_to_none(date_to)
         account_code = _blank_to_none(account_code)
         parsed_query = _parse_journal_query(query)
+        amount_min_value = _blank_to_int(parsed_query["amount_min"]) if query else _blank_to_int(amount_min)
+        amount_max_value = _blank_to_int(parsed_query["amount_max"]) if query else _blank_to_int(amount_max)
         effective_q = parsed_query["q"] if query else q
         effective_source = parsed_query["source"] or source if query else source
         effective_date_from = parsed_query["date_from"] or date_from if query else date_from
         effective_date_to = parsed_query["date_to"] or date_to if query else date_to
         effective_account_code = parsed_query["account_code"] or account_code if query else account_code
+        effective_category = parsed_query["category"] if query else None
         effective_counterparty = counterparty
         effective_source_file = parsed_query["source_file"] or source_file if query else source_file
 
@@ -1192,8 +1283,11 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
             date_from=effective_date_from,
             date_to=effective_date_to,
             account_code=effective_account_code,
+            category=effective_category,
             description_contains=effective_q if not query else None,
             counterparty_contains=effective_counterparty,
+            amount_min=amount_min_value,
+            amount_max=amount_max_value,
             source=effective_source,
             source_file=effective_source_file,
             limit=(5000 if query else limit),
@@ -1278,11 +1372,13 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
     # Import
     @app.get("/import", response_class=HTMLResponse)
     def import_index(request: Request) -> str:
+        return RedirectResponse(url="/journals", status_code=307)
         template = env.get_template("import_upload.html")
         return template.render(request=request, fiscal_year=app.state.fiscal_year)
 
     @app.post("/import/upload", response_class=HTMLResponse)
     async def import_upload(request: Request, files: list[UploadFile] = File(...)) -> str:
+        return PlainTextResponse("import UI is disabled", status_code=410)
         uploads = Path(__file__).parent / "../../../../shinkoku/shinkoku/work/uploads"
         uploads = uploads.resolve()
         uploads.mkdir(parents=True, exist_ok=True)
@@ -1316,6 +1412,7 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
         credit_code: str = Form("2030"),
         source: str = Form("csv_import"),
     ) -> str:
+        return PlainTextResponse("import UI is disabled", status_code=410)
         names = _account_names_map(app.state.db_path)
         multi_results: list[dict] = []
         preview_entries: list[dict[str, Any]] = []
@@ -1359,6 +1456,7 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
         credit_code: str = Form("2030"),
         source: str = Form("csv_import"),
     ) -> str:
+        return PlainTextResponse("import UI is disabled", status_code=410)
         entries: list[dict[str, Any]] = []
         for sp in saved_paths:
             res = import_csv(file_path=sp)
@@ -1523,6 +1621,7 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
     # ===== AI Reading (Receipt OCR via LM Studio Vision) =====
     @app.get("/ai/reading-receipt", response_class=HTMLResponse)
     def ai_reading_receipt_index(request: Request) -> str:
+        return RedirectResponse(url="/journals", status_code=307)
         template = env.get_template("ai_reading_upload.html")
         cfg = _llm_config()
         return template.render(
@@ -1538,6 +1637,7 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
         files: list[UploadFile] = File(...),
         note: str | None = None,
     ) -> str:
+        return PlainTextResponse("AI reading UI is disabled", status_code=410)
         # Save files under work/uploads
         uploads = Path(__file__).parent / "../../../../shinkoku/shinkoku/work/uploads"
         uploads = uploads.resolve()
@@ -1606,6 +1706,7 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
         credit_code: list[str] = Form(...),
         amount: list[int] = Form(...),
     ) -> str:
+        return PlainTextResponse("AI reading UI is disabled", status_code=410)
         entries: list[JournalEntry] = []
         n = len(saved_path)
         for i in range(n):

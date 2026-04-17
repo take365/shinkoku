@@ -37,6 +37,7 @@ class JournalSearchParams(BaseModel):
     date_from: str | None = None
     date_to: str | None = None
     account_code: str | None = None
+    category: str | None = None
     description_contains: str | None = None
     counterparty_contains: str | None = None
     amount_min: int | None = None
