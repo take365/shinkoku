@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>shinkoku Web UI</title>
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP", "Meiryo", sans-serif; margin: 16px 20px 20px; }
+      header { margin-bottom: 10px; display: flex; align-items: baseline; gap: 24px; flex-wrap: wrap; }
+      header h2 { margin: 0; white-space: nowrap; font-size: 1.35rem; }
+      nav { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+      nav a { margin-right: 0; }
+      table { border-collapse: collapse; width: 100%; }
+      th, td { border: 1px solid #ddd; padding: 6px 8px; font-size: 14px; vertical-align: top; }
+      th { background: #f5f5f5; text-align: left; }
+      .muted { color: #666; }
+      .toolbar { margin: 12px 0; }
+      .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+      .card { border: 1px solid #ddd; border-radius: 6px; padding: 12px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h2>shinkoku Web UI / FY {{ fiscal_year }}</h2>
+      <nav>
+        <a href="/journals">仕訳一覧</a>
+        <a href="/pl">損益計算書</a>
+        <a href="/bs">貸借対照表</a>
+        <a href="/trial-balance">勘定科目サマリ</a>
+        <a href="/summary/description">摘要サマリ</a>
+        <a href="/summary/monthly">月次サマリ</a>
+        <a href="/summary/tax">税区分サマリ</a>
+        <a href="/summary/counterparty">取引先サマリ</a>
+        <a href="/source-links">入力元サマリ</a>
+        <a href="/fixed-assets">固定資産</a>
+        <a href="/duplicates">重複候補</a>
+        <a href="/audit">監査ログ</a>
+      </nav>
+    </header>
+    {% block content %}{% endblock %}
+  </body>
+</html>

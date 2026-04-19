@@ -1,0 +1,103 @@
+{% extends 'layout.html' %}
+{% block content %}
+  <h3>入力元詳細</h3>
+  <div class="grid">
+    <div class="card">
+      <div class="muted">登録値</div>
+      <div>{{ raw_path }}</div>
+      <div class="muted" style="margin-top:8px">解決先</div>
+      <div>{{ resolved_path or '未解決' }}</div>
+      {% if size is not none %}
+      <div class="muted" style="margin-top:8px">サイズ</div>
+      <div>{{ '{:,}'.format(size) }} bytes</div>
+      {% endif %}
+      <div class="muted" style="margin-top:8px">合計金額</div>
+      <div>{{ '{:,}'.format(total_amount) }}</div>
+      <div class="toolbar">
+        {% if exists %}
+          <a href="/source-links/raw?path={{ raw_path }}" target="_blank">ブラウザで開く</a>
+          {% if file_uri %}
+          &nbsp;|&nbsp;
+          <a href="{{ file_uri }}" target="_blank">ローカルで開く</a>
+          {% endif %}
+        {% endif %}
+        &nbsp;|&nbsp;
+        <a href="/source-links">一覧に戻る</a>
+      </div>
+    </div>
+    <div class="card">
+      <div class="muted">プレビュー</div>
+      {% if not exists %}
+        <p class="muted">ファイルは現在の Windows 環境から見つかりません。</p>
+      {% elif preview.kind == 'image' %}
+        <img src="/source-links/raw?path={{ raw_path }}" alt="{{ raw_path }}" style="max-width:100%; height:auto; border:1px solid #ddd" />
+      {% elif preview.kind == 'pdf' %}
+        <iframe src="/source-links/raw?path={{ raw_path }}" style="width:100%; height:480px; border:1px solid #ddd"></iframe>
+      {% elif preview.kind == 'csv' %}
+        <table>
+          <tbody>
+            {% for row in preview.rows %}
+            <tr>
+              {% for col in row %}
+              <td>{{ col }}</td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% elif preview.kind == 'text' %}
+        <pre style="white-space:pre-wrap; max-height:480px; overflow:auto">{{ preview.text }}</pre>
+      {% else %}
+        <p class="muted">この形式は簡易プレビュー未対応です。必要なら「ブラウザで開く」を使ってください。</p>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if monthly_items %}
+  <h4 style="margin-top:20px">月別小計</h4>
+  <table>
+    <thead>
+      <tr>
+        <th>月</th>
+        <th>件数</th>
+        <th>金額</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for it in monthly_items %}
+      <tr>
+        <td>{{ it.month }}</td>
+        <td style="text-align:right">{{ it.journal_count }}</td>
+        <td style="text-align:right">{{ '{:,}'.format(it.amount) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  <h4 style="margin-top:20px">関連仕訳</h4>
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>日付</th>
+        <th>摘要</th>
+        <th>取引先</th>
+        <th>source</th>
+        <th>金額</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for it in items %}
+      <tr>
+        <td>{{ it.id }}</td>
+        <td>{{ it.date }}</td>
+        <td>{{ it.description or '' }}</td>
+        <td>{{ it.counterparty or '' }}</td>
+        <td class="muted">{{ it.source or '' }}</td>
+        <td style="text-align:right">{{ '{:,}'.format(it.amount) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}

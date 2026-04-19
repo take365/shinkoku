@@ -2,6 +2,8 @@ output/
 __pycache__/
 *.pyc
 .venv/
+.venv-win/
+.venv-wsl-backup/
 *.egg-info/
 dist/
 .pytest_cache/
@@ -11,9 +13,12 @@ htmlcov/
 .ruff_cache/
 playground/
 .shinkoku/
-templates/
+# `templates/` was previously used as a temporary PDF sample/work area,
+# but this repository's actual Web source lives under `src/shinkoku/web/templates/`.
+# Ignore concrete scratch/output locations instead of every `templates/` directory.
 specs/
 .playwright-cli/
+.codex
 
 # Research screenshots
 skills/e-tax/research/*.png
@@ -26,3 +31,10 @@ shinkoku.config.yaml
 shinkoku.db
 shinkoku.db-wal
 shinkoku.db-shm
+work/
+*.err.log
+*.out.log
+
+# Local Codex/CUA skill installs
+.agents/skills/
+skills-lock.json

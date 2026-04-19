@@ -1,0 +1,40 @@
+{% extends 'layout.html' %}
+{% block content %}
+  <h3>固定資産台帳（表示）</h3>
+  <p class="muted">当期表示は概算。会計・税務計算は別途ご確認ください。</p>
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>名称</th>
+        <th>取得日</th>
+        <th>取得価額</th>
+        <th>耐用年数</th>
+        <th>方法</th>
+        <th>事業割合(%)</th>
+        <th>累計償却</th>
+        <th>簿価</th>
+        <th>当期償却見込み</th>
+        <th>メモ</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in assets %}
+      <tr>
+        <td>{{ a.id }}</td>
+        <td>{{ a.name }}</td>
+        <td>{{ a.acquisition_date }}</td>
+        <td style="text-align:right">{{ '{:,}'.format(a.acquisition_cost) }}</td>
+        <td style="text-align:right">{{ a.useful_life }}</td>
+        <td>{{ '定額法' if a.method=='straight_line' else '定率法' }}</td>
+        <td style="text-align:right">{{ a.business_use_ratio }}</td>
+        <td style="text-align:right">{{ '{:,}'.format(a.accumulated_depreciation) }}</td>
+        <td style="text-align:right">{{ '{:,}'.format(a.book_value) }}</td>
+        <td style="text-align:right">{{ '{:,}'.format(a.estimate_current_year) }}</td>
+        <td>{{ a.memo }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}
+

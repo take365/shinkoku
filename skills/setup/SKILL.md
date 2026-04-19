@@ -13,13 +13,19 @@ description: >
 shinkoku の初回セットアップを対話的に行うスキル。
 設定ファイル（`shinkoku.config.yaml`）の生成とデータベースの初期化を実施する。
 
-## ステップ0: CLI のインストール確認
+## ステップ0: clone 済みリポジトリ前提の CLI 確認
 
-`shinkoku` コマンドが利用可能か確認する。
+このスキルは、`git clone` 済みの shinkoku リポジトリで作業している開発者向けの前提で使う。
+`uv tool install git+https://...` のような利用者向けインストールは前提にしない。
 
-1. `shinkoku --version` を実行する
-2. **コマンドが存在しない場合**: `uv tool install git+https://github.com/kazukinagata/shinkoku` を実行してインストールする
-3. **コマンドが存在する場合**: `uv tool upgrade shinkoku` を実行して最新版に更新する
+1. リポジトリ直下に `pyproject.toml` があることを確認する
+2. プロジェクト環境が未作成なら `uv sync` を実行する
+3. 仮想環境を有効化する
+   - Linux/macOS: `. .venv/bin/activate`
+4. `python -m shinkoku.cli --help` または `python -m shinkoku.cli web --help` でローカルコードから CLI が呼べることを確認する
+5. `shinkoku` コマンド名が必要なら、ローカル環境側で `uv run shinkoku ...` または仮想環境の entry point を使う
+
+開発中は「GitHub から install した CLI」ではなく、「今 clone しているコード」を正とする。
 
 ## ステップ1: 既存設定の確認
 

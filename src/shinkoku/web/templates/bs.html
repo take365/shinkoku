@@ -1,0 +1,57 @@
+{% extends 'layout.html' %}
+{% block content %}
+  <h3>貸借対照表（フル）</h3>
+  {% if bs and bs.get('status','ok') != 'error' %}
+    <div class="grid" style="grid-template-columns: 1fr 1fr; gap:16px;">
+      <div class="card">
+        <h4>資産</h4>
+        <table>
+          <thead><tr><th>科目</th><th style="text-align:right">金額</th></tr></thead>
+          <tbody>
+            {% for a in bs.assets %}
+            <tr>
+              <td><a href="/journals?query={{ ('acc:' ~ a.account_code)|urlencode }}">{{ a.account_code }} {{ a.account_name }}</a></td>
+              <td style="text-align:right">{{ '{:,}'.format(a.amount) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr>
+              <th>資産合計</th>
+              <th style="text-align:right">{{ '{:,}'.format(bs.total_assets | default(0)) }}</th>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <div class="card">
+        <h4>負債・純資産</h4>
+        <table>
+          <thead><tr><th>科目</th><th style="text-align:right">金額</th></tr></thead>
+          <tbody>
+            {% for li in bs.liabilities %}
+            <tr>
+              <td><a href="/journals?query={{ ('acc:' ~ li.account_code)|urlencode }}">{{ li.account_code }} {{ li.account_name }}</a></td>
+              <td style="text-align:right">{{ '{:,}'.format(li.amount) }}</td>
+            </tr>
+            {% endfor %}
+            {% for e in bs.equity %}
+            <tr>
+              <td><a href="/journals?query={{ ('acc:' ~ e.account_code)|urlencode }}">{{ e.account_code }} {{ e.account_name }}</a></td>
+              <td style="text-align:right">{{ '{:,}'.format(e.amount) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr>
+              <th>負債・純資産合計</th>
+              <th style="text-align:right">{{ '{:,}'.format((bs.total_liabilities | default(0)) + (bs.total_equity | default(0))) }}</th>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+    <p style="margin-top:12px" class="muted">チェック: 資産 = 負債 + 純資産 → {{ '{:,}'.format(bs.total_assets | default(0)) }} = {{ '{:,}'.format((bs.total_liabilities | default(0)) + (bs.total_equity | default(0))) }}</p>
+  {% else %}
+    <p class="muted">データなし</p>
+  {% endif %}
+{% endblock %}

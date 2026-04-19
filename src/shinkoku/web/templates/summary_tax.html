@@ -1,0 +1,19 @@
+{% extends 'layout.html' %}
+{% block content %}
+  <h3>消費税内訳</h3>
+  <table>
+    <thead><tr><th>税区分</th><th>件数</th><th>金額合計（借方）</th><th>金額合計（貸方）</th><th>税額合計</th></tr></thead>
+    <tbody>
+      {% for g in groups %}
+      <tr>
+        <td>{{ g.tax_category }}</td>
+        <td style="text-align:right">{{ g.line_count }}</td>
+        <td style="text-align:right">{{ '{:,}'.format(g.debit_total) }}</td>
+        <td style="text-align:right">{{ '{:,}'.format(g.credit_total) }}</td>
+        <td style="text-align:right">{{ '{:,}'.format(g.tax_total) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}
+

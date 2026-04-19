@@ -1,0 +1,17 @@
+{% extends 'layout.html' %}
+{% block content %}
+  <h3>CSV 取り込み</h3>
+  <p class="muted">銀行明細・カード明細などのCSVをアップロードして、仕訳候補を作成します。</p>
+  <ol class="muted" style="margin-top:8px">
+    <li>「ファイルを選択」を押す（またはここにドラッグ＆ドロップ）</li>
+    <li>「アップロードして解析」を押す</li>
+    <li>プレビューを確認 → 貸方科目やsourceを調整 → 「この内容で一括登録」</li>
+  </ol>
+
+  <form method="post" action="/import/upload" enctype="multipart/form-data" style="margin-top:12px; padding:12px; border:1px dashed #aaa; border-radius:6px; background:#fafafa">
+    <input type="file" name="files" accept=".csv" multiple required style="margin-right:8px" />
+    <button type="submit">アップロードして解析</button>
+  </form>
+
+  <p class="muted" style="margin-top:8px">対応: UTF-8 / Shift_JIS。金額・日付・摘要の自動検出に対応しています。</p>
+{% endblock %}

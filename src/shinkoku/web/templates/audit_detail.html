@@ -1,0 +1,69 @@
+{% extends 'layout.html' %}
+{% block content %}
+  <h3>監査ログ 詳細 (ID: {{ rec.id }})</h3>
+  <p class="muted">journal_id: {{ rec.journal_id }} / 年度: {{ rec.fiscal_year }} / 操作: {{ rec.operation }} / 作成時刻: {{ rec.created_at }}</p>
+
+  <style>
+    .chg { background: #fff3cd; }
+  </style>
+
+  <table style="width:100%;">
+    <thead><tr><th>項目</th><th>変更前</th><th>変更後</th></tr></thead>
+    <tbody>
+      {% set hd = rec.before_date != rec.after_date %}
+      <tr><td>日付</td><td class="{% if hd %}chg{% endif %}">{{ rec.before_date or '' }}</td><td class="{% if hd %}chg{% endif %}">{{ rec.after_date or '' }}</td></tr>
+      {% set hs = rec.before_description != rec.after_description %}
+      <tr><td>摘要</td><td class="{% if hs %}chg{% endif %}">{{ rec.before_description or '' }}</td><td class="{% if hs %}chg{% endif %}">{{ rec.after_description or '' }}</td></tr>
+      {% set hc = rec.before_counterparty != rec.after_counterparty %}
+      <tr><td>相手先</td><td class="{% if hc %}chg{% endif %}">{{ rec.before_counterparty or '' }}</td><td class="{% if hc %}chg{% endif %}">{{ rec.after_counterparty or '' }}</td></tr>
+    </tbody>
+  </table>
+
+  <h4 style="margin-top:12px;">明細（借方・貸方）</h4>
+  {% set n = [before_lines|length, after_lines|length] | max %}
+  <table>
+    <thead>
+      <tr>
+        <th colspan="4">変更前</th>
+        <th colspan="4">変更後</th>
+      </tr>
+      <tr>
+        <th>区分</th><th>科目</th><th>金額</th><th>税区分</th>
+        <th>区分</th><th>科目</th><th>金額</th><th>税区分</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for i in range(0, n) %}
+        {% set b = before_lines[i] if i < before_lines|length else None %}
+        {% set a = after_lines[i] if i < after_lines|length else None %}
+        {% set side_chg = (b and a and b.side != a.side) or (b and not a) or (a and not b) %}
+        {% set acc_chg = (b and a and b.account_code != a.account_code) or (b and not a) or (a and not b) %}
+        {% set amt_chg = (b and a and b.amount != a.amount) or (b and not a) or (a and not b) %}
+        {% set tax_chg = (b and a and (b.tax_category or '') != (a.tax_category or '')) or (b and not a) or (a and not b) %}
+        <tr>
+          <td class="{% if side_chg %}chg{% endif %}">{{ b.side if b else '' }}</td>
+          <td class="{% if acc_chg %}chg{% endif %}">{{ b.account_code if b else '' }}</td>
+          <td class="{% if amt_chg %}chg{% endif %}" style="text-align:right">{% if b %}{{ '{:,}'.format(b.amount) }}{% endif %}</td>
+          <td class="{% if tax_chg %}chg{% endif %}">{{ b.tax_category if b else '' }}</td>
+          <td class="{% if side_chg %}chg{% endif %}">{{ a.side if a else '' }}</td>
+          <td class="{% if acc_chg %}chg{% endif %}">{{ a.account_code if a else '' }}</td>
+          <td class="{% if amt_chg %}chg{% endif %}" style="text-align:right">{% if a %}{{ '{:,}'.format(a.amount) }}{% endif %}</td>
+          <td class="{% if tax_chg %}chg{% endif %}">{{ a.tax_category if a else '' }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="grid" style="margin-top:16px;">
+    <div class="card">
+      <h4>変更前 (JSON)</h4>
+      <pre>{{ rec.before_lines_pretty }}</pre>
+    </div>
+    <div class="card">
+      <h4>変更後 (JSON)</h4>
+      <pre>{{ rec.after_lines_pretty }}</pre>
+    </div>
+  </div>
+
+  <p class="muted" style="margin-top:12px"><a href="/audit">← 監査ログ一覧へ戻る</a></p>
+{% endblock %}

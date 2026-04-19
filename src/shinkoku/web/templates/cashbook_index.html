@@ -1,0 +1,15 @@
+{% extends 'layout.html' %}
+{% block content %}
+  <h3>出納帳</h3>
+  <p class="muted">現金・預金らしき科目を表示しています。科目コードを直接指定してもOK。</p>
+  <ul>
+    {% for a in accounts %}
+      <li><a href="/cashbook/{{ a.code }}">{{ a.code }} {{ a.name }}</a></li>
+    {% endfor %}
+  </ul>
+  <form method="get" action="/cashbook" onsubmit="location.href='/cashbook/'+this.code.value; return false;" class="toolbar">
+    <input type="text" name="code" placeholder="科目コード (例: 1010)" />
+    <button type="submit">表示</button>
+  </form>
+{% endblock %}
+

@@ -1,0 +1,130 @@
+{% extends 'layout.html' %}
+{% block content %}
+  <h3>月次サマリ</h3>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;margin:12px 0 18px;">
+    <section style="border:1px solid #ddd;border-radius:8px;padding:12px;background:#fff;">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;">
+        <strong>損益推移</strong>
+        <span class="muted">売上 / 費用 / 純利益</span>
+      </div>
+      <div style="height:260px;margin-top:10px;">
+        <canvas id="pl-monthly-chart"></canvas>
+      </div>
+    </section>
+    <section style="border:1px solid #ddd;border-radius:8px;padding:12px;background:#fff;">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;">
+        <strong>残高推移</strong>
+        <span class="muted">月末資産 / 月末負債 / 月末純資産</span>
+      </div>
+      <div style="height:260px;margin-top:10px;">
+        <canvas id="bs-monthly-chart"></canvas>
+      </div>
+    </section>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>月</th>
+        <th>売上</th>
+        <th>費用</th>
+        <th>純利益</th>
+        <th>月末資産</th>
+        <th>月末負債</th>
+        <th>月末純資産</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for it in items %}
+      <tr>
+        <td><a href="/journals?query={{ ('from:' ~ it.month_from ~ ' to:' ~ it.month_to)|urlencode }}">{{ it.ym }}</a></td>
+        <td style="text-align:right"><a href="/journals?query={{ ('from:' ~ it.month_from ~ ' to:' ~ it.month_to ~ ' cat:revenue')|urlencode }}">{{ '{:,}'.format(it.revenue) }}</a></td>
+        <td style="text-align:right"><a href="/journals?query={{ ('from:' ~ it.month_from ~ ' to:' ~ it.month_to ~ ' cat:expense')|urlencode }}">{{ '{:,}'.format(it.expense) }}</a></td>
+        <td style="text-align:right"><a href="/journals?query={{ ('from:' ~ it.month_from ~ ' to:' ~ it.month_to ~ ' cat:revenue,expense')|urlencode }}">{{ '{:,}'.format(it.net) }}</a></td>
+        <td style="text-align:right"><a href="/journals?query={{ ('from:' ~ it.month_from ~ ' to:' ~ it.month_to ~ ' cat:asset')|urlencode }}">{{ '{:,}'.format(it.asset_balance) }}</a></td>
+        <td style="text-align:right"><a href="/journals?query={{ ('from:' ~ it.month_from ~ ' to:' ~ it.month_to ~ ' cat:liability')|urlencode }}">{{ '{:,}'.format(it.liability_balance) }}</a></td>
+        <td style="text-align:right"><a href="/journals?query={{ ('from:' ~ it.month_from ~ ' to:' ~ it.month_to ~ ' cat:equity')|urlencode }}">{{ '{:,}'.format(it.equity_balance) }}</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr>
+        <th>合計</th>
+        <th style="text-align:right"><a href="/journals?query={{ ('from:' ~ items[0].month_from ~ ' to:' ~ items[-1].month_to ~ ' cat:revenue')|urlencode if items else '' }}">{{ '{:,}'.format(totals.revenue) }}</a></th>
+        <th style="text-align:right"><a href="/journals?query={{ ('from:' ~ items[0].month_from ~ ' to:' ~ items[-1].month_to ~ ' cat:expense')|urlencode if items else '' }}">{{ '{:,}'.format(totals.expense) }}</a></th>
+        <th style="text-align:right"><a href="/journals?query={{ ('from:' ~ items[0].month_from ~ ' to:' ~ items[-1].month_to ~ ' cat:revenue,expense')|urlencode if items else '' }}">{{ '{:,}'.format(totals.net) }}</a></th>
+        <th></th>
+        <th></th>
+        <th></th>
+      </tr>
+    </tfoot>
+  </table>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script>
+    const monthlyLabels = [{% for it in items %}"{{ it.ym }}"{% if not loop.last %}, {% endif %}{% endfor %}];
+    const monthlyRevenue = [{% for it in items %}{{ it.revenue }}{% if not loop.last %}, {% endif %}{% endfor %}];
+    const monthlyExpense = [{% for it in items %}{{ it.expense }}{% if not loop.last %}, {% endif %}{% endfor %}];
+    const monthlyNet = [{% for it in items %}{{ it.net }}{% if not loop.last %}, {% endif %}{% endfor %}];
+    const monthlyAsset = [{% for it in items %}{{ it.asset_balance }}{% if not loop.last %}, {% endif %}{% endfor %}];
+    const monthlyLiability = [{% for it in items %}{{ it.liability_balance }}{% if not loop.last %}, {% endif %}{% endfor %}];
+    const monthlyEquity = [{% for it in items %}{{ it.equity_balance }}{% if not loop.last %}, {% endif %}{% endfor %}];
+
+    const commonOptions = {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      scales: {
+        y: {
+          ticks: {
+            callback(value) {
+              return Number(value).toLocaleString("ja-JP");
+            },
+          },
+        },
+      },
+      plugins: {
+        legend: { position: "bottom" },
+        tooltip: {
+          callbacks: {
+            label(context) {
+              const label = context.dataset.label || "";
+              const value = Number(context.parsed.y ?? context.raw ?? 0).toLocaleString("ja-JP");
+              return `${label}: ${value}円`;
+            },
+          },
+        },
+      },
+    };
+
+    const plCanvas = document.getElementById("pl-monthly-chart");
+    if (plCanvas && window.Chart) {
+      new Chart(plCanvas, {
+        type: "bar",
+        data: {
+          labels: monthlyLabels,
+          datasets: [
+            { label: "売上", data: monthlyRevenue, backgroundColor: "#2f6fed" },
+            { label: "費用", data: monthlyExpense, backgroundColor: "#ef8a17" },
+            { label: "純利益", data: monthlyNet, backgroundColor: "#1f9d55" },
+          ],
+        },
+        options: commonOptions,
+      });
+    }
+
+    const bsCanvas = document.getElementById("bs-monthly-chart");
+    if (bsCanvas && window.Chart) {
+      new Chart(bsCanvas, {
+        type: "line",
+        data: {
+          labels: monthlyLabels,
+          datasets: [
+            { label: "月末資産", data: monthlyAsset, borderColor: "#2f6fed", backgroundColor: "rgba(47,111,237,0.12)", tension: 0.2, fill: false },
+            { label: "月末負債", data: monthlyLiability, borderColor: "#ef8a17", backgroundColor: "rgba(239,138,23,0.12)", tension: 0.2, fill: false },
+            { label: "月末純資産", data: monthlyEquity, borderColor: "#1f9d55", backgroundColor: "rgba(31,157,85,0.12)", tension: 0.2, fill: false },
+          ],
+        },
+        options: commonOptions,
+      });
+    }
+  </script>
+{% endblock %}

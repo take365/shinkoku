@@ -1,0 +1,57 @@
+{% extends 'layout.html' %}
+{% block content %}
+  <h3>AI読み取り — プレビュー</h3>
+  {% if ocr_multi %}
+    <h4>抽出結果(JSON)</h4>
+    {% for j in ocr_multi %}
+      <pre>{{ j | tojson(indent=2) }}</pre>
+    {% endfor %}
+  {% endif %}
+
+  {% if preview_multi %}
+    <h4>仕訳プレビュー（まとめて登録可）</h4>
+    <form method="post" action="/ai/reading-receipt/register" style="margin-bottom:12px">
+      <table>
+        <thead><tr><th>ファイル</th><th>日付</th><th>摘要</th><th>借方</th><th>貸方</th><th>金額</th></tr></thead>
+        <tbody>
+          {% set n = saved_paths|length %}
+          {% for i in range(0, n) %}
+          {% set p = saved_paths[i] %}
+          {% set e = preview_multi[i] %}
+          {% if e %}
+          {% set d = e.lines[0] %}
+          {% set c = e.lines[1] %}
+          <tr>
+            <td class="muted">{{ p }}<input type="hidden" name="saved_path" value="{{ p }}" /></td>
+            <td><input type="date" name="date" value="{{ e.date }}" required /></td>
+            <td><input type="text" name="description" value="{{ e.description }}" required style="width:220px"/></td>
+            <td>
+              <select name="debit_code">
+                <option value="{{ d.account_code }}" selected>{{ d.account_code }} {{ account_names.get(d.account_code,'') }}</option>
+                <option value="5270">5270 {{ account_names.get('5270','') }}</option>
+                <option value="5130">5130 {{ account_names.get('5130','') }}</option>
+                <option value="5140">5140 {{ account_names.get('5140','') }}</option>
+              </select>
+            </td>
+            <td>
+              <select name="credit_code">
+                <option value="{{ c.account_code }}" {% if default_credit == c.account_code %}selected{% endif %}>{{ c.account_code }} {{ account_names.get(c.account_code,'') }}</option>
+                <option value="1001" {% if default_credit == '1001' %}selected{% endif %}>1001 {{ account_names.get('1001','') }}</option>
+                <option value="1002" {% if default_credit == '1002' %}selected{% endif %}>1002 {{ account_names.get('1002','') }}</option>
+                <option value="2030" {% if default_credit == '2030' %}selected{% endif %}>2030 {{ account_names.get('2030','') }}</option>
+              </select>
+            </td>
+            <td><input type="number" name="amount" min="1" value="{{ d.amount }}" required style="width:110px"/></td>
+          </tr>
+          {% else %}
+          <tr><td class="muted" colspan="6">{{ p }} — プレビュー作成に失敗</td></tr>
+          {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+      <div style="margin-top:8px">
+        <button type="submit">一覧の内容で登録</button>
+      </div>
+    </form>
+  {% endif %}
+{% endblock %}

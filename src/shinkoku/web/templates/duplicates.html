@@ -1,0 +1,43 @@
+{% extends 'layout.html' %}
+{% block content %}
+  <h3>重複候補一覧</h3>
+  <form class="toolbar" method="get" action="/duplicates">
+    <label>しきい値: <input type="number" name="threshold" value="{{ threshold }}" min="0" max="100" step="5" /></label>
+    <button type="submit">更新</button>
+  </form>
+  <p class="muted">完全一致: {{ exact_count }} / 類似候補: {{ suspected_count }}</p>
+  <table>
+    <thead>
+      <tr>
+        <th colspan="5">候補A</th>
+        <th colspan="5">候補B</th>
+        <th>スコア</th>
+        <th>理由</th>
+      </tr>
+      <tr>
+        <th>ID</th><th>日付</th><th>摘要</th><th>相手先</th><th>金額(借/貸)</th>
+        <th>ID</th><th>日付</th><th>摘要</th><th>相手先</th><th>金額(借/貸)</th>
+        <th></th><th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for it in items %}
+      <tr>
+        <td>{{ it.a.id }}</td>
+        <td>{{ it.a.date or '' }}</td>
+        <td>{{ it.a.description or '' }}</td>
+        <td>{{ it.a.counterparty or '' }}</td>
+        <td style="text-align:right">{{ '{:,}'.format(it.a.debit | default(0)) }} / {{ '{:,}'.format(it.a.credit | default(0)) }}</td>
+        <td>{{ it.b.id }}</td>
+        <td>{{ it.b.date or '' }}</td>
+        <td>{{ it.b.description or '' }}</td>
+        <td>{{ it.b.counterparty or '' }}</td>
+        <td style="text-align:right">{{ '{:,}'.format(it.b.debit | default(0)) }} / {{ '{:,}'.format(it.b.credit | default(0)) }}</td>
+        <td style="text-align:right">{{ it.score }}</td>
+        <td>{{ it.reason }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}
+
