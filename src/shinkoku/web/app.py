@@ -32,6 +32,7 @@ import base64
 import json as _json
 from typing import Optional
 import mimetypes
+import re
 from urllib.parse import urlencode
 
 try:
@@ -73,6 +74,39 @@ def _resolve_source_path(raw_path: str | None, *, base_dir: Path) -> Path | None
         return candidate.resolve(strict=False)
     except Exception:
         return candidate
+
+
+def _source_file_aliases(raw_path: str | None, *, base_dir: Path) -> list[str]:
+    """Build exact-match aliases for the same source file across Windows/WSL paths."""
+    if not raw_path:
+        return []
+
+    aliases: list[str] = []
+
+    def _add(value: str | None) -> None:
+        if value and value not in aliases:
+            aliases.append(value)
+
+    _add(raw_path)
+
+    resolved = _resolve_source_path(raw_path, base_dir=base_dir)
+    if resolved is not None:
+        _add(str(resolved))
+
+    path_text = raw_path.replace("/", "\\")
+    m = re.match(r"^([A-Za-z]):\\(.*)$", path_text)
+    if m:
+        drive = m.group(1).lower()
+        rest = m.group(2).replace("\\", "/")
+        _add(f"/mnt/{drive}/{rest}")
+
+    m = re.match(r"^/mnt/([a-zA-Z])/(.*)$", raw_path)
+    if m:
+        drive = m.group(1).upper()
+        rest = m.group(2).replace("/", "\\")
+        _add(f"{drive}:\\{rest}")
+
+    return aliases
 
 
 def _safe_relpath(path: Path, *, base_dir: Path) -> str:
@@ -1035,15 +1069,18 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
         preview = _preview_source_file(resolved) if exists and resolved else {"kind": "missing"}
         conn = get_connection(app.state.db_path)
         try:
-            basename = Path(path).name
+            aliases = _source_file_aliases(path, base_dir=app.state.base_dir)
+            if not aliases:
+                aliases = [path]
+            placeholders = ", ".join("?" for _ in aliases)
             rows = conn.execute(
                 "SELECT j.id, j.date, COALESCE(j.description,''), j.counterparty, j.source, j.source_file, "
                 "SUM(CASE WHEN jl.side='debit' THEN jl.amount ELSE 0 END) AS debit_sum "
                 "FROM journals j "
                 "INNER JOIN journal_lines jl ON jl.journal_id = j.id "
-                "WHERE j.fiscal_year = ? AND (j.source_file = ? OR j.source_file LIKE ?) "
+                f"WHERE j.fiscal_year = ? AND j.source_file IN ({placeholders}) "
                 "GROUP BY j.id ORDER BY j.date, j.id",
-                (app.state.fiscal_year, path, f"%{basename}"),
+                (app.state.fiscal_year, *aliases),
             ).fetchall()
             items = [
                 {
@@ -1063,10 +1100,10 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
                 "COUNT(DISTINCT j.id) AS journal_count "
                 "FROM journals j "
                 "INNER JOIN journal_lines jl ON jl.journal_id = j.id "
-                "WHERE j.fiscal_year = ? AND (j.source_file = ? OR j.source_file LIKE ?) "
+                f"WHERE j.fiscal_year = ? AND j.source_file IN ({placeholders}) "
                 "GROUP BY substr(j.date, 1, 7) "
                 "ORDER BY ym",
-                (app.state.fiscal_year, path, f"%{basename}"),
+                (app.state.fiscal_year, *aliases),
             ).fetchall()
             monthly_items = [
                 {

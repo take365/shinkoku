@@ -1,0 +1,8 @@
+bill_no,posting_date,supplier_name,supplier_registration_no,currency,net_amount,tax_amount,grand_total,tax_rate,tax_category,expense_account
+ACC-PINV-2025-00001,2025-01-09,河原デザイン制作所,T6060606060606,JPY,18000,1800,19800,10.0,standard,外注費
+ACC-PINV-2025-00002,2025-01-14,ストックフォトライブラリ,,JPY,4500,450,4950,10.0,standard,仕入高
+ACC-PINV-2025-00003,2025-02-06,山手コーディング合同会社,T7070707070707,JPY,35000,3500,38500,10.0,standard,外注費
+ACC-PINV-2025-00004,2025-02-20,フォントライセンス社,,JPY,12000,1200,13200,10.0,standard,仕入高
+ACC-PINV-2025-00005,2025-03-04,河原デザイン制作所,T6060606060606,JPY,42000,4200,46200,10.0,standard,外注費
+ACC-PINV-2025-00006,2025-03-17,素材マーケット,,JPY,7000,700,7700,10.0,standard,仕入高
+ACC-PINV-2025-00007,2025-03-24,王都第一銀行,,JPY,500,0,500,0.0,exempt,支払手数料
