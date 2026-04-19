@@ -272,6 +272,57 @@ def _detect_import_format(rows: list[list[str]]) -> str:
         return "generic"
 
     first_row = [cell.strip() for cell in rows[0]]
+    if first_row[:11] == [
+        "invoice_no",
+        "posting_date",
+        "customer_name",
+        "customer_registration_no",
+        "currency",
+        "net_amount",
+        "tax_amount",
+        "grand_total",
+        "tax_rate",
+        "tax_category",
+        "is_return",
+    ]:
+        return "erpnext_sales_invoices"
+    if first_row[:11] == [
+        "bill_no",
+        "posting_date",
+        "supplier_name",
+        "supplier_registration_no",
+        "currency",
+        "net_amount",
+        "tax_amount",
+        "grand_total",
+        "tax_rate",
+        "tax_category",
+        "expense_account",
+    ]:
+        return "erpnext_purchase_invoices"
+    if first_row[:8] == [
+        "journal_no",
+        "posting_date",
+        "account",
+        "party_type",
+        "party",
+        "debit",
+        "credit",
+        "remarks",
+    ]:
+        return "erpnext_journal_entries"
+    if first_row[:9] == [
+        "payment_no",
+        "posting_date",
+        "party_type",
+        "party",
+        "mode_of_payment",
+        "paid_amount",
+        "received_amount",
+        "reference_doctype",
+        "reference_name",
+    ]:
+        return "erpnext_payments"
     if (
         len(first_row) >= 5
         and first_row[0] == "日付"
@@ -392,6 +443,206 @@ def _import_bank_account_csv(
         candidates=candidates,
         skipped_rows=skipped_rows,
         errors=errors,
+    )
+
+
+def _parse_erpnext_amount(value: str) -> int | None:
+    amount = _parse_amount(value)
+    if amount is None:
+        return None
+    return abs(amount)
+
+
+def _import_erpnext_sales_invoices(*, file_path: str, encoding: str, rows: list[list[str]]) -> dict:
+    headers = [cell.strip() for cell in rows[0]] if rows else []
+    candidates = []
+    skipped_rows = []
+
+    for i, row in enumerate(rows[1:], start=2):
+        if len(row) < len(headers):
+            skipped_rows.append(i)
+            continue
+
+        date_val = _normalize_date(row[1])
+        amount_val = _parse_erpnext_amount(row[7])
+        if date_val is None or amount_val is None:
+            skipped_rows.append(i)
+            continue
+
+        invoice_no = row[0].strip()
+        customer_name = row[2].strip()
+        tax_category = row[9].strip()
+        is_return = row[10].strip() == "1"
+        description = f"{customer_name} {invoice_no}".strip()
+        if is_return:
+            description = f"返金 {description}".strip()
+
+        candidates.append(
+            {
+                "row_number": i,
+                "date": date_val,
+                "description": description,
+                "amount": amount_val,
+                "direction": "refund" if is_return else "sales",
+                "erpnext_doctype": "Sales Invoice",
+                "counterparty": customer_name,
+                "tax_category": tax_category,
+                "original_data": _build_original_data(headers, row),
+            }
+        )
+
+    return _result_dict(
+        file_path=file_path,
+        file_hash=compute_file_hash(file_path),
+        encoding=encoding,
+        candidates=candidates,
+        skipped_rows=skipped_rows,
+        errors=[],
+    )
+
+
+def _import_erpnext_purchase_invoices(
+    *, file_path: str, encoding: str, rows: list[list[str]]
+) -> dict:
+    headers = [cell.strip() for cell in rows[0]] if rows else []
+    candidates = []
+    skipped_rows = []
+
+    for i, row in enumerate(rows[1:], start=2):
+        if len(row) < len(headers):
+            skipped_rows.append(i)
+            continue
+
+        date_val = _normalize_date(row[1])
+        amount_val = _parse_erpnext_amount(row[7])
+        if date_val is None or amount_val is None:
+            skipped_rows.append(i)
+            continue
+
+        bill_no = row[0].strip()
+        supplier_name = row[2].strip()
+        expense_account = row[10].strip()
+        tax_category = row[9].strip()
+        description = " ".join(part for part in [supplier_name, bill_no, expense_account] if part)
+
+        candidates.append(
+            {
+                "row_number": i,
+                "date": date_val,
+                "description": description,
+                "amount": amount_val,
+                "direction": "purchase",
+                "erpnext_doctype": "Purchase Invoice",
+                "counterparty": supplier_name,
+                "account_hint": expense_account,
+                "tax_category": tax_category,
+                "original_data": _build_original_data(headers, row),
+            }
+        )
+
+    return _result_dict(
+        file_path=file_path,
+        file_hash=compute_file_hash(file_path),
+        encoding=encoding,
+        candidates=candidates,
+        skipped_rows=skipped_rows,
+        errors=[],
+    )
+
+
+def _import_erpnext_journal_entries(*, file_path: str, encoding: str, rows: list[list[str]]) -> dict:
+    headers = [cell.strip() for cell in rows[0]] if rows else []
+    candidates = []
+    skipped_rows = []
+
+    for i, row in enumerate(rows[1:], start=2):
+        if len(row) < len(headers):
+            skipped_rows.append(i)
+            continue
+
+        date_val = _normalize_date(row[1])
+        debit = _parse_erpnext_amount(row[5]) or 0
+        credit = _parse_erpnext_amount(row[6]) or 0
+        amount_val = debit if debit > 0 else credit if credit > 0 else None
+        if date_val is None or amount_val is None:
+            skipped_rows.append(i)
+            continue
+
+        account = row[2].strip()
+        remarks = row[7].strip()
+        direction = "debit" if debit > 0 else "credit"
+        description = " ".join(part for part in [remarks, account] if part)
+
+        candidates.append(
+            {
+                "row_number": i,
+                "date": date_val,
+                "description": description,
+                "amount": amount_val,
+                "direction": direction,
+                "erpnext_doctype": "Journal Entry",
+                "account_hint": account,
+                "journal_no": row[0].strip(),
+                "original_data": _build_original_data(headers, row),
+            }
+        )
+
+    return _result_dict(
+        file_path=file_path,
+        file_hash=compute_file_hash(file_path),
+        encoding=encoding,
+        candidates=candidates,
+        skipped_rows=skipped_rows,
+        errors=[],
+    )
+
+
+def _import_erpnext_payments(*, file_path: str, encoding: str, rows: list[list[str]]) -> dict:
+    headers = [cell.strip() for cell in rows[0]] if rows else []
+    candidates = []
+    skipped_rows = []
+
+    for i, row in enumerate(rows[1:], start=2):
+        if len(row) < len(headers):
+            skipped_rows.append(i)
+            continue
+
+        date_val = _normalize_date(row[1])
+        paid_amount = _parse_erpnext_amount(row[5]) or 0
+        received_amount = _parse_erpnext_amount(row[6]) or 0
+        amount_val = received_amount if received_amount > 0 else paid_amount if paid_amount > 0 else None
+        if date_val is None or amount_val is None:
+            skipped_rows.append(i)
+            continue
+
+        party = row[3].strip()
+        reference_doctype = row[7].strip()
+        reference_name = row[8].strip()
+        direction = "receipt" if received_amount > 0 else "payment"
+        description = " ".join(part for part in [party, reference_doctype, reference_name] if part)
+
+        candidates.append(
+            {
+                "row_number": i,
+                "date": date_val,
+                "description": description,
+                "amount": amount_val,
+                "direction": direction,
+                "erpnext_doctype": "Payment Entry",
+                "counterparty": party,
+                "reference_doctype": reference_doctype,
+                "reference_name": reference_name,
+                "original_data": _build_original_data(headers, row),
+            }
+        )
+
+    return _result_dict(
+        file_path=file_path,
+        file_hash=compute_file_hash(file_path),
+        encoding=encoding,
+        candidates=candidates,
+        skipped_rows=skipped_rows,
+        errors=[],
     )
 
 
@@ -592,6 +843,14 @@ def import_csv(*, file_path: str) -> dict:
         }
 
     fmt = _detect_import_format(rows)
+    if fmt == "erpnext_sales_invoices":
+        return _import_erpnext_sales_invoices(file_path=file_path, encoding=encoding, rows=rows)
+    if fmt == "erpnext_purchase_invoices":
+        return _import_erpnext_purchase_invoices(file_path=file_path, encoding=encoding, rows=rows)
+    if fmt == "erpnext_journal_entries":
+        return _import_erpnext_journal_entries(file_path=file_path, encoding=encoding, rows=rows)
+    if fmt == "erpnext_payments":
+        return _import_erpnext_payments(file_path=file_path, encoding=encoding, rows=rows)
     if fmt == "aeon_card":
         return _import_aeon_card_csv(
             file_path=file_path,
