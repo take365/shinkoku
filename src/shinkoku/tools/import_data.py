@@ -268,6 +268,25 @@ def _result_dict(
 
 def _detect_import_format(rows: list[list[str]]) -> str:
     """Detect vendor-specific CSV formats before generic parsing."""
+    if not rows:
+        return "generic"
+
+    first_row = [cell.strip() for cell in rows[0]]
+    if (
+        len(first_row) >= 5
+        and first_row[0] == "日付"
+        and "支払い金額" in first_row
+        and "預かり金額" in first_row
+    ):
+        return "mufg_bank"
+    if (
+        len(first_row) >= 4
+        and first_row[0] == "年月日"
+        and "お引出し" in first_row
+        and "お預入れ" in first_row
+    ):
+        return "smbc_bank"
+
     for row in rows[:10]:
         cells = [cell.strip() for cell in row]
         if not cells:
@@ -276,6 +295,104 @@ def _detect_import_format(rows: list[list[str]]) -> str:
         if first == "ご利用カード":
             return "aeon_card"
     return "generic"
+
+
+def _find_header_index(headers: list[str], candidates: list[str]) -> int | None:
+    for candidate in candidates:
+        for i, header in enumerate(headers):
+            if header.strip() == candidate:
+                return i
+    return None
+
+
+def _import_bank_account_csv(
+    *,
+    file_path: str,
+    encoding: str,
+    rows: list[list[str]],
+    withdraw_headers: list[str],
+    deposit_headers: list[str],
+) -> dict:
+    """Parse bank account CSVs with both withdrawal and deposit columns."""
+    if not rows:
+        return {
+            "status": "ok",
+            "file_path": file_path,
+            "encoding": encoding,
+            "total_rows": 0,
+            "candidates": [],
+            "skipped_rows": [],
+            "errors": [],
+        }
+
+    headers = [cell.strip() for cell in rows[0]]
+    date_col = _detect_date_column(headers)
+    desc_col = _detect_description_column(headers)
+    extra_desc_cols = _find_additional_desc_columns(headers, desc_col)
+    withdraw_col = _find_header_index(headers, withdraw_headers)
+    deposit_col = _find_header_index(headers, deposit_headers)
+
+    candidates = []
+    skipped_rows = []
+    errors: list[str] = []
+
+    for i, row in enumerate(rows[1:], start=2):
+        if not row or all(not cell.strip() for cell in row):
+            continue
+        if date_col is None or desc_col is None or date_col >= len(row) or desc_col >= len(row):
+            skipped_rows.append(i)
+            continue
+
+        date_val = _normalize_date(row[date_col])
+        desc_val = _build_generic_description(headers, row, desc_col, extra_desc_cols)
+
+        withdrawal = (
+            _parse_amount(row[withdraw_col])
+            if withdraw_col is not None and withdraw_col < len(row)
+            else None
+        )
+        deposit = (
+            _parse_amount(row[deposit_col])
+            if deposit_col is not None and deposit_col < len(row)
+            else None
+        )
+
+        if date_val is None or not desc_val:
+            skipped_rows.append(i)
+            continue
+
+        direction = None
+        amount_val = None
+        if withdrawal is not None and withdrawal > 0:
+            direction = "withdrawal"
+            amount_val = withdrawal
+        elif deposit is not None and deposit > 0:
+            direction = "deposit"
+            amount_val = deposit
+
+        if direction is None or amount_val is None:
+            skipped_rows.append(i)
+            continue
+
+        candidate = {
+            "row_number": i,
+            "date": date_val,
+            "description": desc_val,
+            "amount": amount_val,
+            "direction": direction,
+            "original_data": _build_original_data(headers, row),
+        }
+        candidates.append(candidate)
+
+    file_hash = compute_file_hash(file_path)
+    return _result_dict(
+        file_path=file_path,
+        file_hash=file_hash,
+        encoding=encoding,
+        candidates=candidates,
+        skipped_rows=skipped_rows,
+        errors=errors,
+    )
 
 
 def _import_generic_csv(*, file_path: str, encoding: str, rows: list[list[str]]) -> dict:
@@ -480,6 +597,22 @@ def import_csv(*, file_path: str) -> dict:
             file_path=file_path,
             encoding=encoding,
             rows=rows,
+        )
+    if fmt == "mufg_bank":
+        return _import_bank_account_csv(
+            file_path=file_path,
+            encoding=encoding,
+            rows=rows,
+            withdraw_headers=["支払い金額", "出金金額"],
+            deposit_headers=["預かり金額", "入金金額"],
+        )
+    if fmt == "smbc_bank":
+        return _import_bank_account_csv(
+            file_path=file_path,
+            encoding=encoding,
+            rows=rows,
+            withdraw_headers=["お引出し"],
+            deposit_headers=["お預入れ"],
         )
     return _import_generic_csv(file_path=file_path, encoding=encoding, rows=rows)
 
