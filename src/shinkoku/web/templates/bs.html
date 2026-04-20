@@ -40,6 +40,17 @@
               <td style="text-align:right">{{ '{:,}'.format(e.amount) }}</td>
             </tr>
             {% endfor %}
+            {% if bs.net_income > 0 %}
+            <tr>
+              <td>当期純利益</td>
+              <td style="text-align:right">{{ '{:,}'.format(bs.net_income) }}</td>
+            </tr>
+            {% elif bs.net_income < 0 %}
+            <tr>
+              <td>当期純損失</td>
+              <td style="text-align:right">-{{ '{:,}'.format(0 - bs.net_income) }}</td>
+            </tr>
+            {% endif %}
           </tbody>
           <tfoot>
             <tr>
