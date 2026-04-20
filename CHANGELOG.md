@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.2.1] - 2026-04-20
+
+### Added
+- 参照中心の Web UI 導線を追加・整理（仕訳一覧、各種サマリ、入力元サマリ、入力元詳細、月次グラフなど）
+- `web-ui` スキルを追加
+- `AGENTS.md` を追加し、Codex向けの参照導線を整備
+- `import_data` でカード明細、銀行口座明細、ERPNext CSV の追加フォーマット対応を追加
+- `input_samples/` に架空のサンプルデータセットを追加
+
+### Changed
+- Web UI は更新系を持たず、参照と確認を中心にする方針へ整理
+- 仕訳一覧の絞り込みを検索式ベースに拡張
+- 月次サマリから仕訳一覧へのドリルダウン導線を追加
+- 貸借対照表で当期純利益 / 当期純損失を純資産部に表示するよう変更
+- `setup` スキルと README を clone + `uv sync` 前提の開発者向けフローに調整
+- `.gitignore` とテンプレート管理を見直し、Web UI テンプレートを通常の Git 管理対象に変更
+
 ## [0.2.0] - 2026-02-24
 
 ### Added
