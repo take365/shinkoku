@@ -3,6 +3,8 @@
   <div class="toolbar" style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:4px;">
     <h3 style="margin:0;">仕訳一覧</h3>
     <div class="muted" style="white-space:nowrap;">
+      <a href="/import">CSVインポート</a>
+      &nbsp;|&nbsp;
       <a href="/journals.csv?query={{ query|urlencode }}&q={{ q|urlencode }}&source={{ source|urlencode }}&date_from={{ date_from }}&date_to={{ date_to }}&account_code={{ account_code|urlencode }}&counterparty={{ counterparty|urlencode }}&source_file={{ source_file|urlencode }}&amount_min={{ amount_min }}&amount_max={{ amount_max }}&limit={{ limit }}">CSVダウンロード</a>
     </div>
   </div>
