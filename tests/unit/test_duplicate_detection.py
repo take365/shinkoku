@@ -129,6 +129,22 @@ class TestSourceFileCheck:
 
 
 class TestFindDuplicatePairs:
+    def test_find_duplicate_pairs_same_accounts_scores_90(self, in_memory_db_with_accounts):
+        """Same date/amount/accounts should be promoted to score 90."""
+        db = in_memory_db_with_accounts
+        db.execute("INSERT INTO fiscal_years (year) VALUES (2025)")
+        db.commit()
+
+        id1 = _insert_journal(db, _make_entry(description="first"), include_hash=False)
+        id2 = _insert_journal(db, _make_entry(description="second"), include_hash=False)
+
+        result = find_duplicate_pairs(db, 2025)
+
+        pairs = {(p.journal_id_a, p.journal_id_b): p for p in result.pairs}
+        pair = pairs[(min(id1, id2), max(id1, id2))]
+        assert pair.score == 90
+        assert "同一勘定科目" in pair.reason
+
     def test_find_duplicate_pairs_legacy_exact(self, in_memory_db_with_accounts):
         """Legacy entries (NULL hash) with identical content detected via date+amount+accounts."""
         db = in_memory_db_with_accounts

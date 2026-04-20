@@ -243,3 +243,50 @@ def test_ledger_bs_no_opening_balances(tmp_path):
     assert result["opening_total_assets"] == 0
     assert result["opening_total_liabilities"] == 0
     assert result["opening_total_equity"] == 0
+
+
+def test_ledger_bs_reflects_current_profit_in_equity(tmp_path):
+    """当期純利益が純資産合計に反映されること。"""
+    from shinkoku.db import init_db
+    from shinkoku.master_accounts import MASTER_ACCOUNTS
+    from shinkoku.models import JournalEntry, JournalLine
+    from shinkoku.tools.ledger import ledger_add_journal
+
+    db_path = str(tmp_path / "bs_profit.db")
+    conn = init_db(db_path)
+    for a in MASTER_ACCOUNTS:
+        conn.execute(
+            "INSERT OR IGNORE INTO accounts (code, name, category, sub_category, tax_category) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (a["code"], a["name"], a["category"], a["sub_category"], a["tax_category"]),
+        )
+    conn.execute("INSERT INTO fiscal_years (year) VALUES (2025)")
+    conn.commit()
+    conn.close()
+
+    sale = JournalEntry(
+        date="2025-01-10",
+        description="売上",
+        lines=[
+            JournalLine(side="debit", account_code="1002", amount=10000),
+            JournalLine(side="credit", account_code="4001", amount=10000),
+        ],
+    )
+    expense = JournalEntry(
+        date="2025-01-11",
+        description="消耗品",
+        lines=[
+            JournalLine(side="debit", account_code="5270", amount=3000),
+            JournalLine(side="credit", account_code="1002", amount=3000),
+        ],
+    )
+    assert ledger_add_journal(db_path=db_path, fiscal_year=2025, entry=sale)["status"] == "ok"
+    assert ledger_add_journal(db_path=db_path, fiscal_year=2025, entry=expense)["status"] == "ok"
+
+    result = ledger_bs(db_path=db_path, fiscal_year=2025)
+
+    assert result["status"] == "ok"
+    assert result["net_income"] == 7000
+    assert result["total_assets"] == 7000
+    assert result["total_liabilities"] == 0
+    assert result["total_equity"] == 7000

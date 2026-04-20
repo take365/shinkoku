@@ -21,6 +21,8 @@
   - 楽天カード CSV サンプル
 - `aeon_card/`
   - イオンカード CSV サンプル
+- `fixed_assets/`
+  - 固定資産台帳用 CSV サンプル
 
 ## 方針
 
@@ -31,3 +33,4 @@
 
 - `input_samples` 配下の CSV をそのまま importer にかけて動作確認できます
 - 画面確認や検索条件の確認、重複候補の表示確認などに使う想定です
+- `fixed_assets/fixed_assets.csv` は現状の通常 importer ではなく、画面確認用の demo DB 構築スクリプトから読み込む想定です
