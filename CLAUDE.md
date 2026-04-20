@@ -252,6 +252,15 @@ uv run shinkoku profile --config shinkoku.config.yaml
 | `src/shinkoku/cli/furusato.py` | 4 | ふるさと納税 CLI（add, list, delete, summary） |
 | `src/shinkoku/cli/profile.py` | — | プロファイル取得 CLI（直接コマンド） |
 
+### Web UI
+
+| ファイルパス | 役割 |
+|------------|------|
+| `src/shinkoku/cli/web.py` | `shinkoku web` の CLI エントリポイント。引数解釈と Web アプリ起動。 |
+| `src/shinkoku/web/app.py` | FastAPI ルーティング、画面用データ生成、検索式の解釈、CSV ダウンロード、ヘルスチェック。 |
+
+- 起動: `uv run shinkoku web --db-path shinkoku.db --fiscal-year 2025 --port 8010`
+
 ### スキル（skills/）
 
 | ファイルパス | 役割 |
