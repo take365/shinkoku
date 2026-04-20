@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 from collections import defaultdict
+from typing import TypedDict
 
 from shinkoku.hashing import compute_journal_hash
 from shinkoku.models import (
@@ -12,6 +13,14 @@ from shinkoku.models import (
     DuplicateWarning,
     JournalEntry,
 )
+
+
+class _JournalAggregate(TypedDict):
+    id: int
+    date: str
+    description: str | None
+    account_codes: list[str]
+    debit_total: int
 
 
 def check_duplicate_on_insert(
@@ -145,49 +154,41 @@ def find_duplicate_pairs(
     ).fetchall()
 
     journals: list[tuple[int, str, str | None, str, int]] = []
-    by_journal: dict[int, dict[str, object]] = {}
+    by_journal: dict[int, _JournalAggregate] = {}
     for row in journal_lines:
         journal_id = int(row[0])
         item = by_journal.get(journal_id)
         if item is None:
             item = {
                 "id": journal_id,
-                "date": row[1],
-                "description": row[2],
+                "date": str(row[1]),
+                "description": str(row[2]) if row[2] is not None else None,
                 "account_codes": [],
                 "debit_total": 0,
             }
             by_journal[journal_id] = item
 
-        account_codes = item["account_codes"]
-        assert isinstance(account_codes, list)
-        account_codes.append(str(row[3]))
+        item["account_codes"].append(str(row[3]))
 
         if row[4] == "debit":
-            debit_total = item["debit_total"]
-            assert isinstance(debit_total, int)
-            item["debit_total"] = debit_total + int(row[5])
+            item["debit_total"] = item["debit_total"] + int(row[5])
 
     for item in by_journal.values():
-        account_codes = item["account_codes"]
-        assert isinstance(account_codes, list)
-        debit_total = item["debit_total"]
-        assert isinstance(debit_total, int)
         journals.append(
             (
-                int(item["id"]),
-                str(item["date"]),
+                item["id"],
+                item["date"],
                 item["description"],
-                ",".join(account_codes),
-                debit_total,
+                ",".join(item["account_codes"]),
+                item["debit_total"],
             )
         )
 
     # Index by (date, debit_total) for O(n) grouping
     groups: dict[tuple[str, int], list[tuple[int, str | None, str | None]]] = defaultdict(list)
-    for j in journals:
-        key = (j[1], j[4])  # (date, debit_total)
-        groups[key].append((j[0], j[2], j[3]))  # (id, description, account_codes)
+    for journal_row in journals:
+        key = (journal_row[1], journal_row[4])  # (date, debit_total)
+        groups[key].append((journal_row[0], journal_row[2], journal_row[3]))  # (id, description, account_codes)
 
     # Already-seen pairs from exact matches
     seen = {(p.journal_id_a, p.journal_id_b) for p in pairs}

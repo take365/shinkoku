@@ -19,8 +19,6 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from tests.helpers.demo_data import build_capture_demo_db
-
 DEFAULT_OUTPUT_DIR = ROOT_DIR / "output" / "web-ui-latest"
 DEFAULT_CONFIG_PATH = ROOT_DIR / "shinkoku.config.yaml"
 DEFAULT_SAMPLES_DIR = ROOT_DIR / "input_samples"
@@ -193,6 +191,8 @@ def main() -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     if args.build_demo_db:
+        from tests.helpers.demo_data import build_capture_demo_db
+
         db_path = str(output_dir / "capture_demo.db")
         build_capture_demo_db(
             db_path=db_path,

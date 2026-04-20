@@ -27,7 +27,7 @@ def _run(args: argparse.Namespace) -> None:
     try:
         from shinkoku.web.app import create_app
         import uvicorn
-    except Exception as e:
+    except Exception:
         print(
             (
                 "{\"status\": \"error\", \"message\": "

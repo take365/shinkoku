@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 from pathlib import Path
+from collections.abc import Callable
 from typing import Any
 import shlex
 import calendar
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.routing import Route
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from shinkoku.models import JournalSearchParams, JournalEntry
@@ -36,7 +38,7 @@ import re
 from urllib.parse import urlencode
 
 try:
-    import requests
+    import requests  # type: ignore[import-untyped]
 except Exception:  # pragma: no cover
     requests = None  # type: ignore
 
@@ -140,6 +142,39 @@ def _preview_source_file(path: Path) -> dict[str, Any]:
             return {"kind": "csv", "rows": rows}
         return {"kind": "text", "text": text[:4000]}
     return {"kind": "binary"}
+
+
+def _trial_balance_sort_count(account: dict[str, Any]) -> int:
+    return (
+        1
+        if int(account.get("debit_total", 0) or 0) != 0
+        or int(account.get("credit_total", 0) or 0) != 0
+        else 0
+    )
+
+
+def _trial_balance_sort_name(account: dict[str, Any]) -> str:
+    return str(account.get("account_name", ""))
+
+
+def _trial_balance_sort_code(account: dict[str, Any]) -> str:
+    return str(account.get("account_code", ""))
+
+
+def _trial_balance_sort_amount(account: dict[str, Any]) -> int:
+    return abs(int(account.get("balance", 0) or 0))
+
+
+def _journal_sort_id(journal: dict[str, Any]) -> object:
+    return journal.get("id", 0)
+
+
+def _journal_sort_date(journal: dict[str, Any]) -> object:
+    return journal.get("date", "")
+
+
+def _journal_sort_source_file(journal: dict[str, Any]) -> object:
+    return journal.get("source_file") or ""
 
 
 def _build_journals_url(**params: Any) -> str:
@@ -368,18 +403,17 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
         order = order or "amount"
         dir = dir or "desc"
         reverse = dir != "asc"
+        sort_key: Callable[[dict[str, Any]], Any]
         if order == "count":
-            sort_key = lambda a: (
-                1 if int(a.get("debit_total", 0) or 0) != 0 or int(a.get("credit_total", 0) or 0) != 0 else 0
-            )
+            sort_key = _trial_balance_sort_count
         elif order == "name":
-            sort_key = lambda a: str(a.get("account_name", ""))
+            sort_key = _trial_balance_sort_name
             reverse = dir == "desc"
         elif order == "code":
-            sort_key = lambda a: str(a.get("account_code", ""))
+            sort_key = _trial_balance_sort_code
             reverse = dir == "desc"
         else:
-            sort_key = lambda a: abs(int(a.get("balance", 0) or 0))
+            sort_key = _trial_balance_sort_amount
         accounts = sorted(accounts, key=sort_key, reverse=reverse)
 
         tb_view = dict(tb) if isinstance(tb, dict) else {"accounts": []}
@@ -435,7 +469,7 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
         show_source: int = 0,
         sort: str | None = None,
         dir: str | None = None,
-    ) -> str:
+    ) -> Any:
         try:
             counterparty = _blank_to_none(counterparty)
             source_file = _blank_to_none(source_file)
@@ -498,15 +532,15 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
             else:
                 journals_all = None
 
-            sort_key = None
+            sort_key: Callable[[dict[str, Any]], Any] | None = None
             if effective_sort in {"id", "date", "source_file"}:
                 if effective_sort == "id":
-                    sort_key = lambda j: j.get("id", 0)
+                    sort_key = _journal_sort_id
                 elif effective_sort == "date":
-                    sort_key = lambda j: j.get("date", "")
+                    sort_key = _journal_sort_date
                 elif effective_sort == "source_file":
-                    sort_key = lambda j: (j.get("source_file") or "")
-            if sort_key and isinstance(result, dict) and isinstance(result.get("journals"), list):
+                    sort_key = _journal_sort_source_file
+            if sort_key is not None and isinstance(result, dict) and isinstance(result.get("journals"), list):
                 result["journals"] = sorted(
                     result["journals"],
                     key=sort_key,
@@ -611,7 +645,7 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
 
     @app.get("/debug/routes")
     def debug_routes() -> list[str]:
-        return [r.path for r in app.router.routes]
+        return [route.path for route in app.router.routes if isinstance(route, Route)]
 
     @app.get("/gl/{account_code}", response_class=HTMLResponse)
     def general_ledger(request: Request, account_code: str) -> str:
@@ -639,8 +673,8 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
         # Fetch journal metadata and lines for each candidate pair.
         ids: set[int] = set()
         for p in pairs:
-            ids.add(int(p.get("journal_id_a")))
-            ids.add(int(p.get("journal_id_b")))
+            ids.add(int(p.get("journal_id_a") or 0))
+            ids.add(int(p.get("journal_id_b") or 0))
         meta: dict[int, dict] = {}
         account_names: dict[str, str] = {}
         if ids:
@@ -693,8 +727,8 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
         # Build view models
         items: list[dict] = []
         for p in pairs:
-            a_id = int(p.get("journal_id_a"))
-            b_id = int(p.get("journal_id_b"))
+            a_id = int(p.get("journal_id_a") or 0)
+            b_id = int(p.get("journal_id_b") or 0)
             a_meta = meta.get(a_id, {"id": a_id, "lines": []})
             b_meta = meta.get(b_id, {"id": b_id, "lines": []})
             date = a_meta.get("date") or b_meta.get("date") or ""
@@ -818,7 +852,7 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
         date_to: str | None = None,
         limit: int = 100,
         offset: int = 0,
-    ) -> str:
+    ) -> RedirectResponse:
         return RedirectResponse(
             url=_build_journals_url(
                 query=f'desc:"{desc}"',
@@ -1015,7 +1049,7 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
         return template.render(request=request, fiscal_year=app.state.fiscal_year, accounts=accounts)
 
     @app.get("/cashbook/{account_code}", response_class=HTMLResponse)
-    def cashbook_view(request: Request, account_code: str) -> str:
+    def cashbook_view(request: Request, account_code: str) -> RedirectResponse:
         return RedirectResponse(url=f"/gl/{account_code}", status_code=307)
         gl = ledger_general_ledger(
             db_path=app.state.db_path,
@@ -1065,8 +1099,8 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
                     "exists": exists,
                     "resolved_path": str(resolved) if resolved else "",
                     "display_path": _safe_relpath(resolved, base_dir=app.state.base_dir) if resolved else (raw_path or ""),
-                    "size": resolved.stat().st_size if exists else None,
-                    "file_uri": resolved.as_uri() if exists else "",
+                    "size": resolved.stat().st_size if exists and resolved is not None else None,
+                    "file_uri": resolved.as_uri() if exists and resolved is not None else "",
                 }
                 if q:
                     ql = q.lower()
@@ -1286,7 +1320,7 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
         date_to: str | None = None,
         limit: int = 100,
         offset: int = 0,
-    ) -> str:
+    ) -> RedirectResponse:
         return RedirectResponse(
             url=_build_journals_url(
                 query=f'cp:"{name}"',
@@ -1472,11 +1506,11 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
 
     # Import
     @app.get("/import", response_class=HTMLResponse)
-    def import_index(request: Request) -> str:
+    def import_index(request: Request) -> PlainTextResponse:
         return PlainTextResponse("import UI is disabled", status_code=410)
 
     @app.post("/import/upload", response_class=HTMLResponse)
-    async def import_upload(request: Request, files: list[UploadFile] = File(...)) -> str:
+    async def import_upload(request: Request, files: list[UploadFile] = File(...)) -> PlainTextResponse:
         return PlainTextResponse("import UI is disabled", status_code=410)
         uploads = Path(__file__).parent / "../../../../shinkoku/shinkoku/work/uploads"
         uploads = uploads.resolve()
@@ -1510,7 +1544,7 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
         saved_paths: list[str] = Form(...),
         credit_code: str = Form("2030"),
         source: str = Form("csv_import"),
-    ) -> str:
+    ) -> PlainTextResponse:
         return PlainTextResponse("import UI is disabled", status_code=410)
         names = _account_names_map(app.state.db_path)
         multi_results: list[dict] = []
@@ -1554,7 +1588,7 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
         saved_paths: list[str] = Form(...),
         credit_code: str = Form("2030"),
         source: str = Form("csv_import"),
-    ) -> str:
+    ) -> PlainTextResponse:
         return PlainTextResponse("import UI is disabled", status_code=410)
         entries: list[dict[str, Any]] = []
         for sp in saved_paths:
@@ -1601,7 +1635,7 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
         return template.render(request=request, fiscal_year=app.state.fiscal_year, audit=res)
 
     @app.get("/audit/detail", response_class=HTMLResponse)
-    def audit_detail(request: Request, log_id: int) -> str:
+    def audit_detail(request: Request, log_id: int) -> Any:
         conn = get_connection(app.state.db_path)
         try:
             row = conn.execute(
@@ -1660,12 +1694,12 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
 
     # Path parameter variant for convenience
     @app.get("/audit/detail/{log_id}", response_class=HTMLResponse)
-    def audit_detail_path(request: Request, log_id: int) -> str:
+    def audit_detail_path(request: Request, log_id: int) -> Any:
         return audit_detail(request, log_id)
 
     # Diff view for audit log (before/after highlighting)
     @app.get("/audit/diff", response_class=HTMLResponse)
-    def audit_diff(request: Request, log_id: int) -> str:
+    def audit_diff(request: Request, log_id: int) -> Any:
         conn = get_connection(app.state.db_path)
         try:
             row = conn.execute(
@@ -1714,12 +1748,12 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
         )
 
     @app.get("/audit/diff/{log_id}", response_class=HTMLResponse)
-    def audit_diff_path(request: Request, log_id: int) -> str:
+    def audit_diff_path(request: Request, log_id: int) -> Any:
         return audit_diff(request, log_id)
 
     # ===== AI Reading (Receipt OCR via LM Studio Vision) =====
     @app.get("/ai/reading-receipt", response_class=HTMLResponse)
-    def ai_reading_receipt_index(request: Request) -> str:
+    def ai_reading_receipt_index(request: Request) -> RedirectResponse:
         return RedirectResponse(url="/journals", status_code=307)
         template = env.get_template("ai_reading_upload.html")
         cfg = _llm_config()
@@ -1735,7 +1769,7 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
         request: Request,
         files: list[UploadFile] = File(...),
         note: str | None = None,
-    ) -> str:
+    ) -> Any:
         return PlainTextResponse("AI reading UI is disabled", status_code=410)
         # Save files under work/uploads
         uploads = Path(__file__).parent / "../../../../shinkoku/shinkoku/work/uploads"
@@ -1804,7 +1838,7 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
         debit_code: list[str] = Form(...),
         credit_code: list[str] = Form(...),
         amount: list[int] = Form(...),
-    ) -> str:
+    ) -> PlainTextResponse:
         return PlainTextResponse("AI reading UI is disabled", status_code=410)
         entries: list[JournalEntry] = []
         n = len(saved_path)
