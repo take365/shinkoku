@@ -2,42 +2,103 @@
 {% block content %}
   <h3>重複候補一覧</h3>
   <form class="toolbar" method="get" action="/duplicates">
-    <label>しきい値: <input type="number" name="threshold" value="{{ threshold }}" min="0" max="100" step="5" /></label>
+    <label>しきい値:
+      <input type="number" name="threshold" value="{{ threshold }}" min="0" max="100" step="5" />
+    </label>
+    <label style="margin-left:12px">
+      <input type="checkbox" name="show_source" value="1" {% if show_source %}checked{% endif %} />
+      入力元を表示
+    </label>
     <button type="submit">更新</button>
   </form>
   <p class="muted">完全一致: {{ exact_count }} / 類似候補: {{ suspected_count }}</p>
-  <table>
-    <thead>
-      <tr>
-        <th colspan="5">候補A</th>
-        <th colspan="5">候補B</th>
-        <th>スコア</th>
-        <th>理由</th>
-      </tr>
-      <tr>
-        <th>ID</th><th>日付</th><th>摘要</th><th>相手先</th><th>金額(借/貸)</th>
-        <th>ID</th><th>日付</th><th>摘要</th><th>相手先</th><th>金額(借/貸)</th>
-        <th></th><th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for it in items %}
-      <tr>
-        <td>{{ it.a.id }}</td>
-        <td>{{ it.a.date or '' }}</td>
-        <td>{{ it.a.description or '' }}</td>
-        <td>{{ it.a.counterparty or '' }}</td>
-        <td style="text-align:right">{{ '{:,}'.format(it.a.debit | default(0)) }} / {{ '{:,}'.format(it.a.credit | default(0)) }}</td>
-        <td>{{ it.b.id }}</td>
-        <td>{{ it.b.date or '' }}</td>
-        <td>{{ it.b.description or '' }}</td>
-        <td>{{ it.b.counterparty or '' }}</td>
-        <td style="text-align:right">{{ '{:,}'.format(it.b.debit | default(0)) }} / {{ '{:,}'.format(it.b.credit | default(0)) }}</td>
-        <td style="text-align:right">{{ it.score }}</td>
-        <td>{{ it.reason }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-{% endblock %}
 
+  {% for it in items %}
+    <div class="card" style="margin-bottom:16px">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>日付</th>
+            <th>摘要</th>
+            <th>取引先</th>
+            {% if show_source %}
+            <th>入力元</th>
+            {% endif %}
+            <th colspan="2">借方</th>
+            <th colspan="2">貸方</th>
+          </tr>
+          <tr>
+            <th></th>
+            <th></th>
+            <th></th>
+            <th></th>
+            {% if show_source %}
+            <th></th>
+            {% endif %}
+            <th>勘定科目</th>
+            <th>金額</th>
+            <th>勘定科目</th>
+            <th>金額</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for journal in [it.a, it.b] %}
+            {% set debits = journal.lines | selectattr('side', 'equalto', 'debit') | list %}
+            {% set credits = journal.lines | selectattr('side', 'equalto', 'credit') | list %}
+            {% set row_count = [debits|length, credits|length, 1] | max %}
+            {% for i in range(0, row_count) %}
+            <tr>
+              {% if i == 0 %}
+                <td>{{ journal.id }}</td>
+                <td>
+                  {% if it.journals_url %}
+                    <a href="{{ it.journals_url }}">{{ journal.date or '' }}</a>
+                  {% else %}
+                    {{ journal.date or '' }}
+                  {% endif %}
+                </td>
+                <td>{{ journal.description or '' }}</td>
+                <td>{{ journal.counterparty or '未設定' }}</td>
+                {% if show_source %}
+                <td>{{ journal.source_file or '' }}</td>
+                {% endif %}
+              {% else %}
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                {% if show_source %}
+                <td></td>
+                {% endif %}
+              {% endif %}
+
+              {% if i < debits|length %}
+                <td>{{ debits[i].account_code }} {{ account_names.get(debits[i].account_code, '') }}</td>
+                <td style="text-align:right">{{ '{:,}'.format(debits[i].amount) }}</td>
+              {% else %}
+                <td></td>
+                <td></td>
+              {% endif %}
+
+              {% if i < credits|length %}
+                <td>{{ credits[i].account_code }} {{ account_names.get(credits[i].account_code, '') }}</td>
+                <td style="text-align:right">{{ '{:,}'.format(credits[i].amount) }}</td>
+              {% else %}
+                <td></td>
+                <td></td>
+              {% endif %}
+            </tr>
+            {% endfor %}
+          {% endfor %}
+          <tr>
+            <th>スコア</th>
+            <td style="text-align:right">{{ it.score }}</td>
+            <th>理由</th>
+            <td colspan="{% if show_source %}6{% else %}5{% endif %}">{{ it.reason }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  {% endfor %}
+{% endblock %}

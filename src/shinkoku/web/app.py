@@ -630,19 +630,27 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
 
     # ========== Duplicate Candidates ==========
     @app.get("/duplicates", response_class=HTMLResponse)
-    def duplicates(request: Request, threshold: int = 70) -> str:
+    def duplicates(request: Request, threshold: int = 70, show_source: int | None = None) -> str:
+        if show_source is None and "show_source" not in request.query_params:
+            show_source = 1
+        show_source = 1 if show_source else 0
         res = ledger_check_duplicates(db_path=app.state.db_path, fiscal_year=app.state.fiscal_year, threshold=threshold)
         pairs: list[dict] = res.get("pairs", []) if isinstance(res, dict) else []
-        # Fetch minimal info for each journal in pairs
+        # Fetch journal metadata and lines for each candidate pair.
         ids: set[int] = set()
         for p in pairs:
             ids.add(int(p.get("journal_id_a")))
             ids.add(int(p.get("journal_id_b")))
         meta: dict[int, dict] = {}
+        account_names: dict[str, str] = {}
         if ids:
             conn = get_connection(app.state.db_path)
             try:
                 placeholders = ",".join(["?"] * len(ids))
+                account_names = {
+                    str(code): name
+                    for code, name in conn.execute("SELECT code, name FROM accounts").fetchall()
+                }
                 rows = conn.execute(
                     "SELECT j.id, j.date, COALESCE(j.description,''), j.counterparty, j.source, j.source_file, "
                     "SUM(CASE WHEN jl.side='debit' THEN jl.amount ELSE 0 END) AS debit_sum, "
@@ -661,7 +669,25 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
                         "source_file": r[5],
                         "debit": r[6] or 0,
                         "credit": r[7] or 0,
+                        "lines": [],
                     }
+                line_rows = conn.execute(
+                    "SELECT journal_id, side, account_code, amount "
+                    f"FROM journal_lines WHERE journal_id IN ({placeholders}) "
+                    "ORDER BY journal_id, id",
+                    list(ids),
+                ).fetchall()
+                for journal_id, side, account_code, amount in line_rows:
+                    journal = meta.get(int(journal_id))
+                    if journal is None:
+                        continue
+                    journal["lines"].append(
+                        {
+                            "side": side,
+                            "account_code": str(account_code),
+                            "amount": int(amount),
+                        }
+                    )
             finally:
                 conn.close()
         # Build view models
@@ -669,12 +695,19 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
         for p in pairs:
             a_id = int(p.get("journal_id_a"))
             b_id = int(p.get("journal_id_b"))
+            a_meta = meta.get(a_id, {"id": a_id, "lines": []})
+            b_meta = meta.get(b_id, {"id": b_id, "lines": []})
+            date = a_meta.get("date") or b_meta.get("date") or ""
+            amount = int(a_meta.get("debit") or b_meta.get("debit") or 0)
             items.append(
                 {
-                    "a": meta.get(a_id, {"id": a_id}),
-                    "b": meta.get(b_id, {"id": b_id}),
+                    "a": a_meta,
+                    "b": b_meta,
                     "score": p.get("score", 0),
                     "reason": p.get("reason", ""),
+                    "journals_url": _build_journals_url(
+                        query=f"from:{date} to:{date} mfrom:{amount} mto:{amount}",
+                    ) if date and amount else None,
                 }
             )
         template = env.get_template("duplicates.html")
@@ -682,9 +715,11 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
             request=request,
             fiscal_year=app.state.fiscal_year,
             threshold=threshold,
+            show_source=show_source,
             exact_count=res.get("exact_count", 0),
             suspected_count=res.get("suspected_count", 0),
             items=items,
+            account_names=account_names,
         )
 
     # ========== Description Summary ==========
@@ -1069,6 +1104,9 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
         preview = _preview_source_file(resolved) if exists and resolved else {"kind": "missing"}
         conn = get_connection(app.state.db_path)
         try:
+            account_names = {
+                r["code"]: r["name"] for r in conn.execute("SELECT code, name FROM accounts").fetchall()
+            }
             aliases = _source_file_aliases(path, base_dir=app.state.base_dir)
             if not aliases:
                 aliases = [path]
@@ -1082,18 +1120,43 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
                 "GROUP BY j.id ORDER BY j.date, j.id",
                 (app.state.fiscal_year, *aliases),
             ).fetchall()
-            items = [
-                {
-                    "id": r[0],
-                    "date": r[1],
-                    "description": r[2],
-                    "counterparty": r[3],
-                    "source": r[4],
-                    "source_file": r[5],
-                    "amount": r[6] or 0,
-                }
-                for r in rows
-            ]
+            journal_ids = [int(r[0]) for r in rows]
+            lines_by_journal: dict[int, list[dict[str, Any]]] = {}
+            if journal_ids:
+                line_placeholders = ", ".join("?" for _ in journal_ids)
+                line_rows = conn.execute(
+                    "SELECT journal_id, side, account_code, amount "
+                    "FROM journal_lines "
+                    f"WHERE journal_id IN ({line_placeholders}) "
+                    "ORDER BY id",
+                    tuple(journal_ids),
+                ).fetchall()
+                for lr in line_rows:
+                    jid = int(lr[0])
+                    lines_by_journal.setdefault(jid, []).append(
+                        {
+                            "side": lr[1],
+                            "account_code": lr[2],
+                            "amount": int(lr[3] or 0),
+                        }
+                    )
+
+            items = []
+            for r in rows:
+                jid = int(r[0])
+                journal_lines = lines_by_journal.get(jid, [])
+                items.append(
+                    {
+                        "id": jid,
+                        "date": r[1],
+                        "description": r[2],
+                        "counterparty": r[3],
+                        "source": r[4],
+                        "source_file": r[5],
+                        "amount": int(r[6] or 0),
+                        "lines": journal_lines,
+                    }
+                )
             monthly_rows = conn.execute(
                 "SELECT substr(j.date, 1, 7) AS ym, "
                 "SUM(CASE WHEN jl.side='debit' THEN jl.amount ELSE 0 END) AS debit_sum, "
@@ -1127,6 +1190,7 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
             size=resolved.stat().st_size if exists and resolved else None,
             preview=preview,
             items=items,
+            account_names=account_names,
             total_amount=sum(int(it["amount"]) for it in items),
             monthly_items=monthly_items,
         )
