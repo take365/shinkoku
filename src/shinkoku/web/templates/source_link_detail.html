@@ -3,7 +3,7 @@
   <h3>入力元詳細</h3>
   <div class="grid">
     <div class="card">
-      <div class="muted">登録値</div>
+      <div class="muted">入力元</div>
       <div>{{ raw_path }}</div>
       <div class="muted" style="margin-top:8px">解決先</div>
       <div>{{ resolved_path or '未解決' }}</div>
@@ -28,7 +28,7 @@
     <div class="card">
       <div class="muted">プレビュー</div>
       {% if not exists %}
-        <p class="muted">ファイルは現在の Windows 環境から見つかりません。</p>
+        <p class="muted">ファイルは現在の Windows パスから見つかりません。</p>
       {% elif preview.kind == 'image' %}
         <img src="/source-links/raw?path={{ raw_path }}" alt="{{ raw_path }}" style="max-width:100%; height:auto; border:1px solid #ddd" />
       {% elif preview.kind == 'pdf' %}
@@ -48,13 +48,13 @@
       {% elif preview.kind == 'text' %}
         <pre style="white-space:pre-wrap; max-height:480px; overflow:auto">{{ preview.text }}</pre>
       {% else %}
-        <p class="muted">この形式は簡易プレビュー未対応です。必要なら「ブラウザで開く」を使ってください。</p>
+        <p class="muted">この形式のプレビューは未対応です。必要ならブラウザで開いて確認してください。</p>
       {% endif %}
     </div>
   </div>
 
   {% if monthly_items %}
-  <h4 style="margin-top:20px">月別小計</h4>
+  <h4 style="margin-top:20px">月別集計</h4>
   <table>
     <thead>
       <tr>
@@ -75,28 +75,62 @@
   </table>
   {% endif %}
 
-  <h4 style="margin-top:20px">関連仕訳</h4>
+  <h4 style="margin-top:20px">
+    <a href="/journals?query={{ ('file:' ~ '\"' ~ raw_path ~ '\"')|urlencode }}&show_source=1">関連仕訳</a>
+  </h4>
   <table>
     <thead>
       <tr>
-        <th>ID</th>
-        <th>日付</th>
-        <th>摘要</th>
-        <th>取引先</th>
-        <th>source</th>
+        <th rowspan="2">ID</th>
+        <th rowspan="2">日付</th>
+        <th rowspan="2">摘要</th>
+        <th rowspan="2">取引先</th>
+        <th colspan="2">借方</th>
+        <th colspan="2">貸方</th>
+      </tr>
+      <tr>
+        <th>勘定科目</th>
+        <th>金額</th>
+        <th>勘定科目</th>
         <th>金額</th>
       </tr>
     </thead>
     <tbody>
-      {% for it in items %}
-      <tr>
-        <td>{{ it.id }}</td>
-        <td>{{ it.date }}</td>
-        <td>{{ it.description or '' }}</td>
-        <td>{{ it.counterparty or '' }}</td>
-        <td class="muted">{{ it.source or '' }}</td>
-        <td style="text-align:right">{{ '{:,}'.format(it.amount) }}</td>
-      </tr>
+      {% for j in items %}
+        {% set debits = j.lines | selectattr('side', 'equalto', 'debit') | list %}
+        {% set credits = j.lines | selectattr('side', 'equalto', 'credit') | list %}
+        {% set n = [debits|length, credits|length] | max %}
+        {% for i in range(0, n) %}
+        <tr>
+          {% if i == 0 %}
+            <td>{{ j.id }}</td>
+            <td>{{ j.date }}</td>
+            <td>{{ j.description or '' }}</td>
+            <td>{{ j.counterparty or '未設定' }}</td>
+          {% else %}
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+          {% endif %}
+
+          {% if i < debits|length %}
+            <td>{{ debits[i].account_code }} {{ account_names.get(debits[i].account_code, '') }}</td>
+            <td style="text-align:right">{{ '{:,}'.format(debits[i].amount) }}</td>
+          {% else %}
+            <td></td>
+            <td></td>
+          {% endif %}
+
+          {% if i < credits|length %}
+            <td>{{ credits[i].account_code }} {{ account_names.get(credits[i].account_code, '') }}</td>
+            <td style="text-align:right">{{ '{:,}'.format(credits[i].amount) }}</td>
+          {% else %}
+            <td></td>
+            <td></td>
+          {% endif %}
+        </tr>
+        {% endfor %}
       {% endfor %}
     </tbody>
   </table>

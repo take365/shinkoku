@@ -1069,6 +1069,9 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
         preview = _preview_source_file(resolved) if exists and resolved else {"kind": "missing"}
         conn = get_connection(app.state.db_path)
         try:
+            account_names = {
+                r["code"]: r["name"] for r in conn.execute("SELECT code, name FROM accounts").fetchall()
+            }
             aliases = _source_file_aliases(path, base_dir=app.state.base_dir)
             if not aliases:
                 aliases = [path]
@@ -1082,18 +1085,43 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
                 "GROUP BY j.id ORDER BY j.date, j.id",
                 (app.state.fiscal_year, *aliases),
             ).fetchall()
-            items = [
-                {
-                    "id": r[0],
-                    "date": r[1],
-                    "description": r[2],
-                    "counterparty": r[3],
-                    "source": r[4],
-                    "source_file": r[5],
-                    "amount": r[6] or 0,
-                }
-                for r in rows
-            ]
+            journal_ids = [int(r[0]) for r in rows]
+            lines_by_journal: dict[int, list[dict[str, Any]]] = {}
+            if journal_ids:
+                line_placeholders = ", ".join("?" for _ in journal_ids)
+                line_rows = conn.execute(
+                    "SELECT journal_id, side, account_code, amount "
+                    "FROM journal_lines "
+                    f"WHERE journal_id IN ({line_placeholders}) "
+                    "ORDER BY id",
+                    tuple(journal_ids),
+                ).fetchall()
+                for lr in line_rows:
+                    jid = int(lr[0])
+                    lines_by_journal.setdefault(jid, []).append(
+                        {
+                            "side": lr[1],
+                            "account_code": lr[2],
+                            "amount": int(lr[3] or 0),
+                        }
+                    )
+
+            items = []
+            for r in rows:
+                jid = int(r[0])
+                journal_lines = lines_by_journal.get(jid, [])
+                items.append(
+                    {
+                        "id": jid,
+                        "date": r[1],
+                        "description": r[2],
+                        "counterparty": r[3],
+                        "source": r[4],
+                        "source_file": r[5],
+                        "amount": int(r[6] or 0),
+                        "lines": journal_lines,
+                    }
+                )
             monthly_rows = conn.execute(
                 "SELECT substr(j.date, 1, 7) AS ym, "
                 "SUM(CASE WHEN jl.side='debit' THEN jl.amount ELSE 0 END) AS debit_sum, "
@@ -1127,6 +1155,7 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
             size=resolved.stat().st_size if exists and resolved else None,
             preview=preview,
             items=items,
+            account_names=account_names,
             total_amount=sum(int(it["amount"]) for it in items),
             monthly_items=monthly_items,
         )
