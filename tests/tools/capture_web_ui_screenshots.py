@@ -12,8 +12,6 @@ from pathlib import Path
 from urllib.parse import urlencode, urljoin
 
 import yaml
-from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
-from playwright.sync_api import sync_playwright
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 if str(ROOT_DIR) not in sys.path:
@@ -92,6 +90,8 @@ def _start_server(*, db_path: str, fiscal_year: int, host: str, port: int, log_d
 
 
 def _safe_wait(page) -> None:
+    from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+
     try:
         page.wait_for_load_state("networkidle", timeout=3_000)
     except PlaywrightTimeoutError:
@@ -204,6 +204,14 @@ def main() -> int:
     port, base_url = _resolve_base_url(args)
     started_server = False
     server_process: subprocess.Popen[str] | None = None
+
+    try:
+        from playwright.sync_api import sync_playwright
+    except ModuleNotFoundError as exc:  # pragma: no cover - environment guard
+        raise SystemExit(
+            "playwright is required to capture Web UI screenshots. "
+            "Install the dev dependencies with `uv sync --all-extras`."
+        ) from exc
 
     try:
         if args.build_demo_db:
