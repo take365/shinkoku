@@ -1473,9 +1473,7 @@ def create_app(*, db_path: str, fiscal_year: int) -> FastAPI:
     # Import
     @app.get("/import", response_class=HTMLResponse)
     def import_index(request: Request) -> str:
-        return RedirectResponse(url="/journals", status_code=307)
-        template = env.get_template("import_upload.html")
-        return template.render(request=request, fiscal_year=app.state.fiscal_year)
+        return PlainTextResponse("import UI is disabled", status_code=410)
 
     @app.post("/import/upload", response_class=HTMLResponse)
     async def import_upload(request: Request, files: list[UploadFile] = File(...)) -> str:
